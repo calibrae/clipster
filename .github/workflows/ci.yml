@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test
+    runs-on: [self-hosted, macOS, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-test-
+
+      - name: Run tests
+        run: cargo test --workspace --exclude clipster-app
+
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: [self-hosted, macOS, ARM64]
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os_name: macos-arm64
+            ext: ""
+          - target: x86_64-pc-windows-gnu
+            os_name: windows-x64
+            ext: ".exe"
+          - target: x86_64-unknown-linux-gnu
+            os_name: linux-x64
+            ext: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ matrix.target }}-
+
+      - name: Install cross-compilation tools
+        if: matrix.target != 'aarch64-apple-darwin'
+        run: |
+          rustup target add ${{ matrix.target }}
+          which zig || brew install zig
+          which cargo-zigbuild || cargo install cargo-zigbuild
+
+      - name: Build (native)
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: cargo build --release -p clipster-server -p clipster-agent -p clipster-cli
+
+      - name: Build (cross)
+        if: matrix.target != 'aarch64-apple-darwin'
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo zigbuild --release --target ${{ matrix.target }} -p clipster-server -p clipster-agent -p clipster-cli
+
+      - name: Package artifacts
+        run: |
+          DIR="clipster-${{ matrix.os_name }}"
+          mkdir -p "$DIR"
+          if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+            PREFIX="target/release"
+          else
+            PREFIX="target/${{ matrix.target }}/release"
+          fi
+          cp "${PREFIX}/clipster-server${{ matrix.ext }}" "$DIR/"
+          cp "${PREFIX}/clipster-agent${{ matrix.ext }}" "$DIR/"
+          cp "${PREFIX}/clipster-cli${{ matrix.ext }}" "$DIR/"
+          cp README.md "$DIR/"
+          tar czf "${DIR}.tar.gz" "$DIR"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipster-${{ matrix.os_name }}
+          path: clipster-${{ matrix.os_name }}.tar.gz
+
+  release:
+    name: Release
+    runs-on: [self-hosted, macOS, ARM64]
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --repo ${{ github.repository }} \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            clipster-*.tar.gz
