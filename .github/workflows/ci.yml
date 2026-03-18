@@ -7,6 +7,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -24,28 +28,16 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-test-
+          key: cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-test-
 
       - name: Run tests
         run: cargo test --workspace --exclude clipster-app
 
   build:
-    name: Build ${{ matrix.target }}
+    name: Build
     runs-on: [self-hosted, macOS, ARM64]
     needs: test
-    strategy:
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            os_name: macos-arm64
-            ext: ""
-          - target: x86_64-pc-windows-gnu
-            os_name: windows-x64
-            ext: ".exe"
-          - target: x86_64-unknown-linux-gnu
-            os_name: linux-x64
-            ext: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -56,46 +48,69 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-${{ matrix.target }}-
+          key: cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-build-
 
       - name: Install cross-compilation tools
-        if: matrix.target != 'aarch64-apple-darwin'
         run: |
-          rustup target add ${{ matrix.target }}
+          rustup target add x86_64-pc-windows-gnu x86_64-unknown-linux-gnu
           which zig || brew install zig
           which cargo-zigbuild || cargo install cargo-zigbuild
 
-      - name: Build (native)
-        if: matrix.target == 'aarch64-apple-darwin'
+      - name: Build macOS (native)
         run: cargo build --release -p clipster-server -p clipster-agent -p clipster-cli
 
-      - name: Build (cross)
-        if: matrix.target != 'aarch64-apple-darwin'
+      - name: Build Linux (cross)
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
-          cargo zigbuild --release --target ${{ matrix.target }} -p clipster-server -p clipster-agent -p clipster-cli
+          cargo zigbuild --release --target x86_64-unknown-linux-gnu -p clipster-server -p clipster-agent -p clipster-cli
 
-      - name: Package artifacts
+      - name: Build Windows (cross)
         run: |
-          DIR="clipster-${{ matrix.os_name }}"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo zigbuild --release --target x86_64-pc-windows-gnu -p clipster-server -p clipster-agent -p clipster-cli
+
+      - name: Package macOS
+        run: |
+          DIR="clipster-macos-arm64"
           mkdir -p "$DIR"
-          if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
-            PREFIX="target/release"
-          else
-            PREFIX="target/${{ matrix.target }}/release"
-          fi
-          cp "${PREFIX}/clipster-server${{ matrix.ext }}" "$DIR/"
-          cp "${PREFIX}/clipster-agent${{ matrix.ext }}" "$DIR/"
-          cp "${PREFIX}/clipster-cli${{ matrix.ext }}" "$DIR/"
+          cp target/release/clipster-server target/release/clipster-agent target/release/clipster-cli "$DIR/"
           cp README.md "$DIR/"
           tar czf "${DIR}.tar.gz" "$DIR"
 
-      - name: Upload artifacts
+      - name: Package Linux
+        run: |
+          DIR="clipster-linux-x64"
+          mkdir -p "$DIR"
+          cp target/x86_64-unknown-linux-gnu/release/clipster-server target/x86_64-unknown-linux-gnu/release/clipster-agent target/x86_64-unknown-linux-gnu/release/clipster-cli "$DIR/"
+          cp README.md "$DIR/"
+          tar czf "${DIR}.tar.gz" "$DIR"
+
+      - name: Package Windows
+        run: |
+          DIR="clipster-windows-x64"
+          mkdir -p "$DIR"
+          cp target/x86_64-pc-windows-gnu/release/clipster-server.exe target/x86_64-pc-windows-gnu/release/clipster-agent.exe target/x86_64-pc-windows-gnu/release/clipster-cli.exe "$DIR/"
+          cp README.md "$DIR/"
+          tar czf "${DIR}.tar.gz" "$DIR"
+
+      - name: Upload macOS
         uses: actions/upload-artifact@v4
         with:
-          name: clipster-${{ matrix.os_name }}
-          path: clipster-${{ matrix.os_name }}.tar.gz
+          name: clipster-macos-arm64
+          path: clipster-macos-arm64.tar.gz
+
+      - name: Upload Linux
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipster-linux-x64
+          path: clipster-linux-x64.tar.gz
+
+      - name: Upload Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipster-windows-x64
+          path: clipster-windows-x64.tar.gz
 
   release:
     name: Release
