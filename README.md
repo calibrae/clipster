@@ -18,18 +18,18 @@
 Self-hosted clipboard manager for people who copy things on one machine and desperately need them on another. Text, images, synced in real-time. No cloud accounts, no subscriptions, no telemetry. Just your server, your data, your clipboard — with a man bun.
 
 ```
-┌──────────────┐         ┌──────────────────┐         ┌──────────────┐
-│   MacBook    │         │  Clipster Server  │         │  Windows PC  │
-│              │──push──▶│                   │◀──push──│              │
-│  Cmd+C "hi"  │         │  SQLite + Web UI  │         │  Ctrl+C 🖼️   │
-│              │◀──poll──│   :8743           │──poll──▶│              │
-│  sees 🖼️     │         │                   │         │  sees "hi"   │
-└──────────────┘         └──────────────────┘         └──────────────┘
-                                  ▲
-                                  │ browser
-                              ┌───┴───┐
-                              │ Web UI │
-                              └───────┘
++----------------+                +--------------------+                +----------------+
+|    MacBook     |                |  Clipster Server   |                |   Windows PC   |
+|                |----push------->|                    |<-----push------|                |
+|  Cmd+C "hi"   |                |   SQLite + Web UI  |                |   Ctrl+C img   |
+|                |<---poll--------|      :8743         |------poll----->|                |
+|   sees img     |                |                    |                |   sees "hi"    |
++----------------+                +--------------------+                +----------------+
+                                           |
+                                        browser
+                                     +---------+
+                                     |  Web UI |
+                                     +---------+
 ```
 
 ## Why Clipster?
