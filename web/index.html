@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clipster</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-top">
+        <div class="brand">
+          <h1>Clipster</h1>
+          <span class="subtitle">Clipboard Manager</span>
+        </div>
+        <span class="clip-count" id="clip-count"></span>
+        <button class="settings-btn" id="settings-btn" title="Settings" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+      <div class="header-controls">
+        <div class="search-wrap">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="search" id="search" placeholder="Search clips... (Esc to clear)" autocomplete="off">
+        </div>
+        <div class="filters" id="filters">
+          <button class="filter-btn active" data-filter="all">All</button>
+          <button class="filter-btn" data-filter="text">Text</button>
+          <button class="filter-btn" data-filter="image">Images</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="clips"></main>
+
+    <div class="empty-state" id="empty-state" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
+      <p class="empty-title">No clips yet</p>
+      <p class="empty-sub">Copy something to your clipboard and it will appear here.</p>
+    </div>
+  </div>
+
+  <div class="toast-area" id="toast-area"></div>
+
+  <div class="modal-overlay" id="delete-modal" hidden>
+    <div class="modal">
+      <p class="modal-title">Delete clip?</p>
+      <p class="modal-desc">This action cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="modal-btn modal-cancel" id="modal-cancel">Cancel</button>
+        <button class="modal-btn modal-confirm" id="modal-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="settings-modal" hidden>
+    <div class="modal settings-panel">
+      <p class="modal-title">Settings</p>
+      <div class="settings-form">
+        <label class="setting-label">Server URL
+          <input type="url" id="setting-server-url" class="setting-input" placeholder="http://localhost:8743">
+        </label>
+        <label class="setting-label">API Key
+          <input type="password" id="setting-api-key" class="setting-input" placeholder="clp_...">
+        </label>
+        <label class="setting-label setting-check">
+          <input type="checkbox" id="setting-insecure">
+          Accept self-signed TLS certificates
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-cancel" id="settings-cancel">Cancel</button>
+        <button class="modal-btn modal-save" id="settings-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+[package]
+name = "clipster-app"
+version = "0.1.0"
+edition = "2024"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+clipster-common = { path = "../clipster-common" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-global-shortcut = "2"
+reqwest = { workspace = true }
+tokio = { workspace = true }
+arboard = { version = "3", features = ["image-data"] }
+toml = { workspace = true }
+directories = { workspace = true }
+png = "0.17"
+base64 = "0.22"
+anyhow = "1"

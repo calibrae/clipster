@@ -1,0 +1,45 @@
+[package]
+name = "clipster-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clipster-common = { path = "../clipster-common" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+toml = { workspace = true }
+sha2 = { workspace = true }
+directories = { workspace = true }
+axum = { version = "0.8", features = ["multipart"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "set-header", "limit"] }
+tower = { version = "0.5", features = ["util"] }
+subtle = "2"
+rusqlite = { version = "0.33", features = ["bundled"] }
+rust-embed = "8"
+mime_guess = "2"
+anyhow = "1"
+multer = "3"
+futures-util = "0.3"
+rcgen = "0.13"
+rustls = "0.23"
+tokio-rustls = "0.26"
+rustls-pemfile = "2"
+sha1 = "0.10"
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2"] }
+hyper = "1"
+rand = "0.9"
+base62 = "2"
+hostname = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+reqwest = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+axum = { version = "0.8" }

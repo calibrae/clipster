@@ -1,0 +1,13 @@
+services:
+  clipster-server:
+    build: .
+    ports:
+      - "8743:8743"
+    volumes:
+      - clipster-data:/data
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+
+volumes:
+  clipster-data:

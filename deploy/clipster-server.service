@@ -1,0 +1,26 @@
+[Unit]
+Description=Clipster Clipboard Sync Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clipster
+Group=clipster
+ExecStart=/usr/local/bin/clipster-server --config /etc/clipster/server.toml
+Restart=on-failure
+RestartSec=5
+WorkingDirectory=/var/lib/clipster
+Environment=RUST_LOG=info
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/clipster
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target
