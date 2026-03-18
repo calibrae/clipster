@@ -13,7 +13,6 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  PATH: /Users/cali/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
 jobs:
   test:
@@ -21,6 +20,9 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup PATH
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -42,6 +44,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup PATH
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -54,38 +59,28 @@ jobs:
 
       - name: Install tools
         run: |
-rustup target add x86_64-apple-darwin x86_64-pc-windows-gnu x86_64-unknown-linux-gnu
+          rustup target add x86_64-apple-darwin x86_64-pc-windows-gnu x86_64-unknown-linux-gnu
           which zig || brew install zig
           which cargo-zigbuild || cargo install cargo-zigbuild
           which cargo-tauri || cargo install tauri-cli
 
-      # ── CLI tools (all platforms) ────────────────────
-
-      - name: Build CLI (macOS ARM64, native)
+      - name: Build CLI (macOS ARM64)
         run: cargo build --release -p clipster-server -p clipster-agent -p clipster-cli
 
-      - name: Build CLI (macOS x86_64, cross)
+      - name: Build CLI (macOS x86_64)
         run: cargo build --release --target x86_64-apple-darwin -p clipster-server -p clipster-agent -p clipster-cli
 
-      - name: Build CLI (Linux x86_64, cross)
-        run: |
-cargo zigbuild --release --target x86_64-unknown-linux-gnu -p clipster-server -p clipster-agent -p clipster-cli
+      - name: Build CLI (Linux x86_64)
+        run: cargo zigbuild --release --target x86_64-unknown-linux-gnu -p clipster-server -p clipster-agent -p clipster-cli
 
-      - name: Build CLI (Windows x86_64, cross)
-        run: |
-cargo zigbuild --release --target x86_64-pc-windows-gnu -p clipster-server -p clipster-agent -p clipster-cli
-
-      # ── macOS DMGs ───────────────────────────────────
+      - name: Build CLI (Windows x86_64)
+        run: cargo zigbuild --release --target x86_64-pc-windows-gnu -p clipster-server -p clipster-agent -p clipster-cli
 
       - name: Build Tauri (macOS ARM64)
-        run: |
-cd clipster-app && cargo tauri build
+        run: cd clipster-app && cargo tauri build
 
       - name: Build Tauri (macOS x86_64)
-        run: |
-cd clipster-app && cargo tauri build --target x86_64-apple-darwin
-
-      # ── Package ──────────────────────────────────────
+        run: cd clipster-app && cargo tauri build --target x86_64-apple-darwin
 
       - name: Package Linux
         run: |
@@ -103,18 +98,15 @@ cd clipster-app && cargo tauri build --target x86_64-apple-darwin
           cp README.md "$DIR/"
           tar czf "${DIR}.tar.gz" "$DIR"
 
-      - name: Build fat DMGs (app + CLI tools)
+      - name: Build fat DMGs
         run: |
-          # ARM64: mount, copy binaries in, repack
           for ARCH in aarch64 x86_64; do
             if [ "$ARCH" = "aarch64" ]; then
               SRC_DMG=$(ls target/release/bundle/dmg/*.dmg)
               BIN_DIR="target/release"
-              EXT=""
             else
               SRC_DMG=$(ls target/x86_64-apple-darwin/release/bundle/dmg/*.dmg)
               BIN_DIR="target/x86_64-apple-darwin/release"
-              EXT=""
             fi
 
             MOUNT=$(mktemp -d)
@@ -123,15 +115,12 @@ cd clipster-app && cargo tauri build --target x86_64-apple-darwin
             cp -R "$MOUNT"/* "$STAGE"/
             hdiutil detach "$MOUNT" -quiet
 
-            # Add server + CLI to the DMG (agent is embedded in the app)
-            cp "${BIN_DIR}/clipster-server${EXT}" "$STAGE/"
-            cp "${BIN_DIR}/clipster-cli${EXT}" "$STAGE/"
+            cp "${BIN_DIR}/clipster-server" "$STAGE/"
+            cp "${BIN_DIR}/clipster-cli" "$STAGE/"
 
             hdiutil create -srcfolder "$STAGE" -volname "Clipster" -format UDZO -o "Clipster_${ARCH}.dmg"
             rm -rf "$STAGE"
           done
-
-      # ── Upload ───────────────────────────────────────
 
       - uses: actions/upload-artifact@v4
         with:
@@ -161,6 +150,9 @@ cd clipster-app && cargo tauri build --target x86_64-apple-darwin
     permissions:
       contents: write
     steps:
+      - name: Setup PATH
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
