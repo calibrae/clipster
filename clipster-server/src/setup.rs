@@ -186,8 +186,96 @@ pub fn install(config_path: Option<&Path>) -> Result<()> {
     let cfg = config_path
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| config_dir().join("server.toml"));
+    let is_root = unsafe { libc::geteuid() } == 0;
 
-    // User-level systemd service
+    if is_root {
+        install_linux_system(&exe, &cfg)
+    } else {
+        install_linux_user(&exe, &cfg)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn install_linux_system(exe: &Path, cfg: &Path) -> Result<()> {
+    // Create clipster user if it doesn't exist
+    let user_exists = std::process::Command::new("id")
+        .args(["-u", "clipster"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !user_exists {
+        let status = std::process::Command::new("useradd")
+            .args(["--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "clipster"])
+            .status()
+            .context("failed to create clipster user")?;
+        if !status.success() {
+            anyhow::bail!("useradd clipster failed");
+        }
+        println!("Created system user: clipster");
+    }
+
+    // Create data directories
+    let data_dir = Path::new("/var/lib/clipster");
+    std::fs::create_dir_all(data_dir.join("images"))?;
+    // chown to clipster
+    let _ = std::process::Command::new("chown")
+        .args(["-R", "clipster:clipster", "/var/lib/clipster"])
+        .status();
+
+    // Write unit file
+    let service_path = Path::new("/etc/systemd/system/clipster-server.service");
+    let service = format!(
+        "[Unit]\n\
+         Description=Clipster Clipboard Sync Server\n\
+         After=network-online.target\n\
+         Wants=network-online.target\n\
+         \n\
+         [Service]\n\
+         Type=simple\n\
+         User=clipster\n\
+         Group=clipster\n\
+         ExecStart={exe} --config {cfg}\n\
+         Restart=on-failure\n\
+         RestartSec=5\n\
+         WorkingDirectory=/var/lib/clipster\n\
+         Environment=RUST_LOG=info\n\
+         NoNewPrivileges=true\n\
+         ProtectSystem=strict\n\
+         ProtectHome=true\n\
+         ReadWritePaths=/var/lib/clipster\n\
+         PrivateTmp=true\n\
+         \n\
+         [Install]\n\
+         WantedBy=multi-user.target\n",
+        exe = exe.display(),
+        cfg = cfg.display(),
+    );
+
+    std::fs::write(service_path, &service)
+        .with_context(|| format!("failed to write {}", service_path.display()))?;
+
+    let status = std::process::Command::new("systemctl")
+        .args(["daemon-reload"])
+        .status()?;
+    if !status.success() {
+        anyhow::bail!("systemctl daemon-reload failed");
+    }
+
+    let status = std::process::Command::new("systemctl")
+        .args(["enable", "--now", "clipster-server"])
+        .status()?;
+    if !status.success() {
+        anyhow::bail!("systemctl enable --now failed");
+    }
+
+    println!("Installed system service: {}", service_path.display());
+    println!("Status: systemctl status clipster-server");
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn install_linux_user(exe: &Path, cfg: &Path) -> Result<()> {
     let service_dir = directories::BaseDirs::new()
         .context("could not determine home directory")?
         .home_dir()
@@ -213,20 +301,21 @@ pub fn install(config_path: Option<&Path>) -> Result<()> {
         cfg = cfg.display(),
     );
 
-    std::fs::write(&service_path, &service)?;
+    std::fs::write(&service_path, &service)
+        .with_context(|| format!("failed to write {}", service_path.display()))?;
 
     let status = std::process::Command::new("systemctl")
         .args(["--user", "daemon-reload"])
         .status()?;
     if !status.success() {
-        anyhow::bail!("systemctl daemon-reload failed");
+        anyhow::bail!("systemctl --user daemon-reload failed (is dbus-user-session installed?)");
     }
 
     let status = std::process::Command::new("systemctl")
         .args(["--user", "enable", "--now", "clipster-server"])
         .status()?;
     if !status.success() {
-        anyhow::bail!("systemctl enable --now failed");
+        anyhow::bail!("systemctl --user enable --now failed");
     }
 
     println!("Installed user service: {}", service_path.display());
@@ -297,22 +386,30 @@ pub fn uninstall() -> Result<()> {
 
     #[cfg(target_os = "linux")]
     {
-        let _ = std::process::Command::new("systemctl")
-            .args(["--user", "disable", "--now", "clipster-server"])
-            .status();
+        let is_root = unsafe { libc::geteuid() } == 0;
+        let system_path = std::path::Path::new("/etc/systemd/system/clipster-server.service");
+        let user_path = directories::BaseDirs::new()
+            .map(|d| d.home_dir().join(".config/systemd/user/clipster-server.service"))
+            .unwrap_or_default();
 
-        let service_dir = directories::BaseDirs::new()
-            .context("could not determine home directory")?
-            .home_dir()
-            .join(".config/systemd/user");
-        let service_path = service_dir.join("clipster-server.service");
-
-        if service_path.exists() {
-            std::fs::remove_file(&service_path)?;
+        if is_root && system_path.exists() {
+            let _ = std::process::Command::new("systemctl")
+                .args(["disable", "--now", "clipster-server"])
+                .status();
+            std::fs::remove_file(system_path)?;
+            let _ = std::process::Command::new("systemctl")
+                .args(["daemon-reload"])
+                .status();
+            println!("Uninstalled system service");
+        } else if user_path.exists() {
+            let _ = std::process::Command::new("systemctl")
+                .args(["--user", "disable", "--now", "clipster-server"])
+                .status();
+            std::fs::remove_file(&user_path)?;
             let _ = std::process::Command::new("systemctl")
                 .args(["--user", "daemon-reload"])
                 .status();
-            println!("Uninstalled {}", service_path.display());
+            println!("Uninstalled user service");
         } else {
             println!("Not installed");
         }
@@ -347,11 +444,23 @@ pub fn status() -> Result<()> {
 
     #[cfg(target_os = "linux")]
     {
-        let status = std::process::Command::new("systemctl")
-            .args(["--user", "status", "clipster-server", "--no-pager"])
-            .status()?;
-        if !status.success() {
-            println!("Server is not running");
+        let is_root = unsafe { libc::geteuid() } == 0;
+        let system_path = std::path::Path::new("/etc/systemd/system/clipster-server.service");
+
+        if is_root || system_path.exists() {
+            let status = std::process::Command::new("systemctl")
+                .args(["status", "clipster-server", "--no-pager"])
+                .status()?;
+            if !status.success() {
+                println!("System service is not running");
+            }
+        } else {
+            let status = std::process::Command::new("systemctl")
+                .args(["--user", "status", "clipster-server", "--no-pager"])
+                .status()?;
+            if !status.success() {
+                println!("User service is not running");
+            }
         }
     }
 

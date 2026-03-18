@@ -33,6 +33,7 @@ rustls-pemfile = "2"
 sha1 = "0.10"
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2"] }
 hyper = "1"
+libc = "0.2"
 rand = "0.9"
 base62 = "2"
 hostname = "0.4"
