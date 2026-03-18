@@ -9,7 +9,8 @@
   "bundle": {
     "active": true,
     "icon": [
-      "icons/icon.png"
+      "icons/icon.png",
+      "icons/icon.ico"
     ]
   },
   "app": {
