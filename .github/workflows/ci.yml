@@ -128,9 +128,8 @@ jobs:
             cp -R "$MOUNT"/* "$STAGE"/
             hdiutil detach "$MOUNT" -quiet
 
-            # Add CLI tools to the DMG root
+            # Add server + CLI to the DMG (agent is embedded in the app)
             cp "${BIN_DIR}/clipster-server${EXT}" "$STAGE/"
-            cp "${BIN_DIR}/clipster-agent${EXT}" "$STAGE/"
             cp "${BIN_DIR}/clipster-cli${EXT}" "$STAGE/"
 
             hdiutil create -srcfolder "$STAGE" -volname "Clipster" -format UDZO -o "Clipster_${ARCH}.dmg"

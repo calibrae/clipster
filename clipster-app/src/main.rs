@@ -1,9 +1,12 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod sync;
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     Manager,
     menu::{Menu, MenuItem},
@@ -19,9 +22,14 @@ struct AppSettings {
     api_key: String,
     #[serde(default)]
     insecure: bool,
+    #[serde(default = "default_true")]
+    sync_enabled: bool,
 }
 
+fn default_true() -> bool { true }
+
 static SETTINGS: OnceLock<Mutex<AppSettings>> = OnceLock::new();
+static SYNC_RESTART: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 
 fn settings_path() -> PathBuf {
     directories::ProjectDirs::from("com", "clipster", "clipster")
@@ -47,6 +55,7 @@ fn load_settings() -> AppSettings {
         } else {
             AppSettings {
                 server_url: "http://localhost:8743".into(),
+                sync_enabled: true,
                 ..Default::default()
             }
         }
@@ -96,7 +105,6 @@ struct ApiResponse {
     content_type: Option<String>,
 }
 
-/// Proxy all API calls through Rust (handles TLS, auth, self-signed certs)
 #[tauri::command]
 async fn api_request(req: ApiRequest) -> Result<ApiResponse, String> {
     let settings = current_settings();
@@ -137,7 +145,6 @@ async fn api_request(req: ApiRequest) -> Result<ApiResponse, String> {
     })
 }
 
-/// Fetch raw binary content (for images) — returns base64
 #[tauri::command]
 async fn api_fetch_bytes(path: String) -> Result<String, String> {
     use base64::Engine;
@@ -174,6 +181,10 @@ fn save_settings(settings: AppSettings) -> Result<(), String> {
         if let Ok(mut s) = m.lock() {
             *s = settings;
         }
+    }
+    // Signal the sync task to restart with new settings
+    if let Some(flag) = SYNC_RESTART.get() {
+        flag.store(true, Ordering::Relaxed);
     }
     Ok(())
 }
@@ -212,12 +223,15 @@ fn main() {
     let settings = load_settings();
     SETTINGS.set(Mutex::new(settings)).ok();
 
+    let restart_flag = Arc::new(AtomicBool::new(false));
+    SYNC_RESTART.set(restart_flag.clone()).ok();
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .build(),
         )
-        .setup(|app| {
+        .setup(move |app| {
             let show = MenuItem::with_id(app, "show", "Show Clipster", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
@@ -253,6 +267,12 @@ fn main() {
                     }
                 },
             )?;
+
+            // Spawn the clipboard sync agent in the background
+            let flag = restart_flag.clone();
+            tokio::spawn(async move {
+                sync::run_sync_loop(flag).await;
+            });
 
             Ok(())
         })

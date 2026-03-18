@@ -17,6 +17,9 @@ tokio = { workspace = true }
 arboard = { version = "3", features = ["image-data"] }
 toml = { workspace = true }
 directories = { workspace = true }
+sha2 = { workspace = true }
+hostname = "0.4"
+tracing = { workspace = true }
 png = "0.17"
 base64 = "0.22"
 anyhow = "1"
