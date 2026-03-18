@@ -64,9 +64,7 @@ jobs:
         run: cargo build --release -p clipster-server -p clipster-agent -p clipster-cli
 
       - name: Build CLI (macOS x86_64, cross)
-        run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
-          cargo zigbuild --release --target x86_64-apple-darwin -p clipster-server -p clipster-agent -p clipster-cli
+        run: cargo build --release --target x86_64-apple-darwin -p clipster-server -p clipster-agent -p clipster-cli
 
       - name: Build CLI (Linux x86_64, cross)
         run: |
