@@ -108,10 +108,34 @@ jobs:
           cp README.md "$DIR/"
           tar czf "${DIR}.tar.gz" "$DIR"
 
-      - name: Collect DMGs
+      - name: Build fat DMGs (app + CLI tools)
         run: |
-          cp target/release/bundle/dmg/*.dmg Clipster_aarch64.dmg
-          cp target/x86_64-apple-darwin/release/bundle/dmg/*.dmg Clipster_x86_64.dmg
+          # ARM64: mount, copy binaries in, repack
+          for ARCH in aarch64 x86_64; do
+            if [ "$ARCH" = "aarch64" ]; then
+              SRC_DMG=$(ls target/release/bundle/dmg/*.dmg)
+              BIN_DIR="target/release"
+              EXT=""
+            else
+              SRC_DMG=$(ls target/x86_64-apple-darwin/release/bundle/dmg/*.dmg)
+              BIN_DIR="target/x86_64-apple-darwin/release"
+              EXT=""
+            fi
+
+            MOUNT=$(mktemp -d)
+            hdiutil attach "$SRC_DMG" -mountpoint "$MOUNT" -nobrowse -quiet
+            STAGE=$(mktemp -d)
+            cp -R "$MOUNT"/* "$STAGE"/
+            hdiutil detach "$MOUNT" -quiet
+
+            # Add CLI tools to the DMG root
+            cp "${BIN_DIR}/clipster-server${EXT}" "$STAGE/"
+            cp "${BIN_DIR}/clipster-agent${EXT}" "$STAGE/"
+            cp "${BIN_DIR}/clipster-cli${EXT}" "$STAGE/"
+
+            hdiutil create -srcfolder "$STAGE" -volname "Clipster" -format UDZO -o "Clipster_${ARCH}.dmg"
+            rm -rf "$STAGE"
+          done
 
       # ── Upload ───────────────────────────────────────
 
