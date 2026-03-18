@@ -53,42 +53,50 @@ jobs:
 
       - name: Install tools
         run: |
-          rustup target add x86_64-pc-windows-gnu x86_64-unknown-linux-gnu
+          rustup target add x86_64-apple-darwin x86_64-pc-windows-gnu x86_64-unknown-linux-gnu
           which zig || brew install zig
           which cargo-zigbuild || cargo install cargo-zigbuild
           which cargo-tauri || cargo install tauri-cli
 
-      - name: Build CLI tools (macOS native)
+      # ── CLI tools (all platforms) ────────────────────
+
+      - name: Build CLI (macOS ARM64, native)
         run: cargo build --release -p clipster-server -p clipster-agent -p clipster-cli
 
-      - name: Build CLI tools (Linux cross)
+      - name: Build CLI (macOS x86_64, cross)
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo zigbuild --release --target x86_64-apple-darwin -p clipster-server -p clipster-agent -p clipster-cli
+
+      - name: Build CLI (Linux x86_64, cross)
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           cargo zigbuild --release --target x86_64-unknown-linux-gnu -p clipster-server -p clipster-agent -p clipster-cli
 
-      - name: Build CLI tools (Windows cross)
+      - name: Build CLI (Windows x86_64, cross)
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           cargo zigbuild --release --target x86_64-pc-windows-gnu -p clipster-server -p clipster-agent -p clipster-cli
 
-      - name: Build Tauri app (macOS .dmg)
+      # ── macOS DMGs ───────────────────────────────────
+
+      - name: Build Tauri (macOS ARM64)
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           cd clipster-app && cargo tauri build
 
-      - name: Package macOS
+      - name: Build Tauri (macOS x86_64)
         run: |
-          DIR="clipster-macos-arm64"
-          mkdir -p "$DIR"
-          cp target/release/clipster-server target/release/clipster-agent target/release/clipster-cli "$DIR/"
-          cp README.md "$DIR/"
-          tar czf "${DIR}.tar.gz" "$DIR"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cd clipster-app && cargo tauri build --target x86_64-apple-darwin
+
+      # ── Package ──────────────────────────────────────
 
       - name: Package Linux
         run: |
           DIR="clipster-linux-x64"
           mkdir -p "$DIR"
-          cp target/x86_64-unknown-linux-gnu/release/clipster-server target/x86_64-unknown-linux-gnu/release/clipster-agent target/x86_64-unknown-linux-gnu/release/clipster-cli "$DIR/"
+          cp target/x86_64-unknown-linux-gnu/release/clipster-{server,agent,cli} "$DIR/"
           cp README.md "$DIR/"
           tar czf "${DIR}.tar.gz" "$DIR"
 
@@ -96,33 +104,36 @@ jobs:
         run: |
           DIR="clipster-windows-x64"
           mkdir -p "$DIR"
-          cp target/x86_64-pc-windows-gnu/release/clipster-server.exe target/x86_64-pc-windows-gnu/release/clipster-agent.exe target/x86_64-pc-windows-gnu/release/clipster-cli.exe "$DIR/"
+          cp target/x86_64-pc-windows-gnu/release/clipster-{server,agent,cli}.exe "$DIR/"
           cp README.md "$DIR/"
           tar czf "${DIR}.tar.gz" "$DIR"
 
-      - name: Upload macOS CLI
-        uses: actions/upload-artifact@v4
-        with:
-          name: clipster-macos-arm64
-          path: clipster-macos-arm64.tar.gz
+      - name: Collect DMGs
+        run: |
+          cp target/release/bundle/dmg/*.dmg Clipster_aarch64.dmg
+          cp target/x86_64-apple-darwin/release/bundle/dmg/*.dmg Clipster_x86_64.dmg
 
-      - name: Upload Linux CLI
-        uses: actions/upload-artifact@v4
+      # ── Upload ───────────────────────────────────────
+
+      - uses: actions/upload-artifact@v4
         with:
           name: clipster-linux-x64
           path: clipster-linux-x64.tar.gz
 
-      - name: Upload Windows CLI
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: clipster-windows-x64
           path: clipster-windows-x64.tar.gz
 
-      - name: Upload macOS .dmg
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: Clipster.dmg
-          path: target/release/bundle/dmg/*.dmg
+          name: Clipster-aarch64.dmg
+          path: Clipster_aarch64.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clipster-x86_64.dmg
+          path: Clipster_x86_64.dmg
 
   release:
     name: Release
