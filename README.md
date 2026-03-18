@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" width="128" height="128" alt="Clipster — a clipboard hipster">
+  <img src="assets/clipster.png" width="256" alt="Clipster — a clipboard hipster">
 </p>
 <h1 align="center">Clipster</h1>
 <p align="center"><em>Your clipboard's cooler, bearded cousin who syncs across all your devices.</em></p>
