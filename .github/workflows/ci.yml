@@ -51,24 +51,30 @@ jobs:
           key: cargo-build-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-build-
 
-      - name: Install cross-compilation tools
+      - name: Install tools
         run: |
           rustup target add x86_64-pc-windows-gnu x86_64-unknown-linux-gnu
           which zig || brew install zig
           which cargo-zigbuild || cargo install cargo-zigbuild
+          which cargo-tauri || cargo install tauri-cli
 
-      - name: Build macOS (native)
+      - name: Build CLI tools (macOS native)
         run: cargo build --release -p clipster-server -p clipster-agent -p clipster-cli
 
-      - name: Build Linux (cross)
+      - name: Build CLI tools (Linux cross)
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           cargo zigbuild --release --target x86_64-unknown-linux-gnu -p clipster-server -p clipster-agent -p clipster-cli
 
-      - name: Build Windows (cross)
+      - name: Build CLI tools (Windows cross)
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           cargo zigbuild --release --target x86_64-pc-windows-gnu -p clipster-server -p clipster-agent -p clipster-cli
+
+      - name: Build Tauri app (macOS .dmg)
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cd clipster-app && cargo tauri build
 
       - name: Package macOS
         run: |
@@ -94,23 +100,29 @@ jobs:
           cp README.md "$DIR/"
           tar czf "${DIR}.tar.gz" "$DIR"
 
-      - name: Upload macOS
+      - name: Upload macOS CLI
         uses: actions/upload-artifact@v4
         with:
           name: clipster-macos-arm64
           path: clipster-macos-arm64.tar.gz
 
-      - name: Upload Linux
+      - name: Upload Linux CLI
         uses: actions/upload-artifact@v4
         with:
           name: clipster-linux-x64
           path: clipster-linux-x64.tar.gz
 
-      - name: Upload Windows
+      - name: Upload Windows CLI
         uses: actions/upload-artifact@v4
         with:
           name: clipster-windows-x64
           path: clipster-windows-x64.tar.gz
+
+      - name: Upload macOS .dmg
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clipster.dmg
+          path: target/release/bundle/dmg/*.dmg
 
   release:
     name: Release
@@ -132,4 +144,5 @@ jobs:
             --repo ${{ github.repository }} \
             --title "${{ github.ref_name }}" \
             --generate-notes \
-            clipster-*.tar.gz
+            clipster-*.tar.gz \
+            Clipster_*.dmg
