@@ -1,112 +1,149 @@
-# Clipster
+<p align="center">
+  <h1 align="center">📋 Clipster</h1>
+  <p align="center">Copy here, paste there. Your clipboard, everywhere.</p>
+</p>
 
-Cross-platform clipboard manager with cloud sync. Self-hosted, built in Rust.
+<p align="center">
+  <a href="https://github.com/calibrae/clipster/actions"><img src="https://github.com/calibrae/clipster/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/calibrae/clipster/releases/latest"><img src="https://img.shields.io/github/v/release/calibrae/clipster?color=a78bfa" alt="Release"></a>
+  <img src="https://img.shields.io/badge/rust-stable-orange" alt="Rust">
+  <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="Platforms">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+</p>
 
-Copy on any device, paste on any other. Text and images, synced in real-time through your own server.
+---
 
-## Architecture
+Self-hosted clipboard manager with cloud sync. Copy text or images on any machine, access them from any other. Built in Rust, runs on your hardware.
 
 ```
-clipster/
-  clipster-common/     # Shared types, models, config
-  clipster-server/     # REST API + embedded web UI + SQLite
-  clipster-agent/      # Background daemon, clipboard watcher
-  clipster-cli/        # CLI interface
-  clipster-app/        # Tauri desktop app (system tray)
-  web/                 # Web UI (embedded at compile time)
-  deploy/              # systemd service, install script, example config
+┌──────────────┐         ┌──────────────────┐         ┌──────────────┐
+│   MacBook    │         │  Clipster Server  │         │  Windows PC  │
+│              │──push──▶│                   │◀──push──│              │
+│  Cmd+C "hi"  │         │  SQLite + Web UI  │         │  Ctrl+C 🖼️  │
+│              │◀──poll──│   :8743           │──poll──▶│              │
+│  sees 🖼️     │         │                   │         │  sees "hi"   │
+└──────────────┘         └──────────────────┘         └──────────────┘
+                                  ▲
+                                  │ browser
+                              ┌───┴───┐
+                              │ Web UI │
+                              └───────┘
 ```
 
-## Quick Start
+## Features
 
-### 1. Build
+- **Clipboard sync** — text and images, real-time across macOS / Linux / Windows
+- **Desktop app** — system tray, global hotkey (Cmd+Shift+V), embedded sync agent
+- **Web UI** — dark theme, search, filters, favorites, click-to-copy
+- **Self-hosted** — your server, your data, your rules
+- **Built-in TLS** — auto-generated self-signed certs, no reverse proxy needed
+- **API key auth** — timing-safe Bearer token validation
+- **Daemon support** — `install` / `uninstall` / `status` on every platform
+- **Small binaries** — server 3.3 MB, client 2 MB DMG (strip + LTO)
+- **Single setup** — `clipster-server setup` generates everything, prints client config
+
+## Installation
+
+### Pre-built binaries
+
+Download from [GitHub Releases](https://github.com/calibrae/clipster/releases/latest):
+
+| Platform | File | Contents |
+|---|---|---|
+| macOS (Apple Silicon) | `Clipster_aarch64.dmg` | Desktop app + server + CLI |
+| macOS (Intel) | `Clipster_x86_64.dmg` | Desktop app + server + CLI |
+| Linux (x86_64) | `clipster-linux-x64.tar.gz` | Server + agent + CLI |
+| Windows (x86_64) | `clipster-windows-x64.tar.gz` | Server + agent + CLI |
+
+### Build from source
 
 ```bash
 cargo build --release --workspace
 ```
 
-### 2. Setup Server
+## Quick Start
+
+### 1. Setup the server
 
 ```bash
-# Generate config + API key, print client connection params
-clipster-server setup
-
-# Or with TLS (auto-generates self-signed cert)
 clipster-server setup --tls
 ```
 
-This creates `server.toml` in the platform config directory and outputs:
+Generates config + API key, prints everything you need:
 
 ```
-server_url = "https://10.10.0.2:8743"
-api_key = "clp_..."
-insecure = true
+=== Clipster Server Setup Complete ===
+
+Config:  ~/.config/clipster/server.toml
+Bind:    0.0.0.0:8743
+TLS:     true
+
+--- Client Configuration ---
+
+  server_url = "https://10.10.0.2:8743"
+  api_key = "clp_2iogpBAyxAuPLjjTCkf..."
+  insecure = true
 ```
 
-### 3. Install as Daemon
+### 2. Run it
 
 ```bash
-# macOS (launchd), Linux (systemd --user), Windows (schtasks)
-clipster-server install
+# Just run it
+clipster-server
 
-# Check status
-clipster-server status
-
-# Remove
-clipster-server uninstall
+# Or install as a daemon
+clipster-server install   # launchd (macOS) / systemd (Linux) / schtasks (Windows)
+clipster-server status    # check it's running
 ```
 
-### 4. Connect Clients
+### 3. Connect clients
 
-**Agent** (background clipboard watcher):
+**Desktop app** (macOS) — open `Clipster.app`, click the tray icon, go to Settings, paste your server URL + API key. Done. Clipboard syncs automatically.
+
+**Headless** (Linux/Windows servers):
 ```bash
 clipster-agent --server https://10.10.0.2:8743 -k
 ```
 
 **CLI**:
 ```bash
-clipster list
-clipster search "something"
-clipster copy <clip-id>
+clipster-cli list              # recent clips
+clipster-cli search "foo"      # search
+clipster-cli copy <clip-id>    # copy to local clipboard
 ```
 
-**Desktop App** (Tauri):
-```bash
-cargo run -p clipster-app
-# Then: Settings > Server URL
+**Web UI** — just open `https://your-server:8743` in a browser.
+
+## Architecture
+
+```
+clipster/
+  clipster-common/     Shared types, models, config
+  clipster-server/     REST API + embedded web UI + SQLite
+  clipster-agent/      Headless sync daemon (for servers without a GUI)
+  clipster-cli/        CLI interface
+  clipster-app/        Tauri v2 desktop app (tray + embedded sync)
+  web/                 HTML/CSS/JS (compiled into server + app)
+  deploy/              systemd service, Dockerfile, install script
 ```
 
-**Agent as macOS daemon**:
-```bash
-clipster-agent install    # launchd
-clipster-agent status
-clipster-agent uninstall
-```
+**Server** is a single binary: API, web UI, SQLite, TLS — all built in. No nginx, no Postgres, no Docker required (but a Dockerfile is included if you want it).
 
-## Features
-
-- **Clipboard sync** — text and images, across macOS/Linux/Windows
-- **Web UI** — embedded in the server binary, dark theme, search, filters
-- **Desktop app** — system tray with Cmd+Shift+V hotkey, native clipboard write
-- **Deduplication** — content-hash based, 5s window
-- **TLS** — built-in self-signed cert generation, no reverse proxy needed
-- **Auth** — API key with timing-safe comparison
-- **Soft delete** — clips are never hard-deleted
-- **Favorites** — star clips to find them later
+**Client app** is also a single binary: system tray, clipboard watcher, sync agent, settings — all in one `.app` / `.exe`.
 
 ## API
 
-All endpoints under `/api/v1`, authenticated via `Authorization: Bearer <key>`.
+All endpoints under `/api/v1`. Authenticated via `Authorization: Bearer <key>`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /clips | Create clip (JSON text, multipart image) |
-| GET | /clips | List/search (`?limit=&offset=&type=&search=&device=`) |
-| GET | /clips/:id | Get clip metadata |
-| GET | /clips/:id/content | Get raw content |
-| DELETE | /clips/:id | Soft-delete |
-| PATCH | /clips/:id/favorite | Toggle favorite |
-| GET | /health | Health check (unauthenticated) |
+| `POST` | `/clips` | Create clip (JSON for text, multipart for images) |
+| `GET` | `/clips` | List / search (`?limit=&offset=&type=&search=&device=`) |
+| `GET` | `/clips/:id` | Get clip metadata |
+| `GET` | `/clips/:id/content` | Get raw content |
+| `DELETE` | `/clips/:id` | Soft-delete |
+| `PATCH` | `/clips/:id/favorite` | Toggle favorite |
+| `GET` | `/health` | Health check (no auth required) |
 
 ## Deployment
 
@@ -116,7 +153,7 @@ All endpoints under `/api/v1`, authenticated via `Authorization: Bearer <key>`.
 docker compose up -d
 ```
 
-### Systemd (Linux)
+### systemd (Linux)
 
 ```bash
 sudo deploy/install.sh
@@ -128,17 +165,19 @@ sudo deploy/install.sh
 clipster-server --bind 0.0.0.0:8743 --tls
 ```
 
-## Config Files
+## Config
 
 Platform config directory (`~/.config/clipster/` on Linux, `~/Library/Application Support/com.clipster.clipster/` on macOS):
 
-- `server.toml` — server config (bind, db_path, api_key, tls)
-- `client.toml` — agent/CLI config (server_url, api_key, device_name)
-- `app.toml` — desktop app config (server_url, api_key, insecure)
+| File | Used by | Key settings |
+|------|---------|-------------|
+| `server.toml` | Server | `bind`, `db_path`, `api_key`, `tls` |
+| `app.toml` | Desktop app | `server_url`, `api_key`, `insecure`, `sync_enabled` |
+| `client.toml` | Agent / CLI | `server_url`, `api_key`, `device_name` |
 
 ## Stack
 
-Rust workspace: axum, SQLite (rusqlite), arboard, Tauri v2, reqwest, tokio, clap, rust-embed.
+Rust, axum, SQLite, Tauri v2, arboard, reqwest, tokio, rustls, clap.
 
 ## License
 
