@@ -13,6 +13,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  PATH: /Users/cali/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
 jobs:
   test:
@@ -53,7 +54,7 @@ jobs:
 
       - name: Install tools
         run: |
-          rustup target add x86_64-apple-darwin x86_64-pc-windows-gnu x86_64-unknown-linux-gnu
+rustup target add x86_64-apple-darwin x86_64-pc-windows-gnu x86_64-unknown-linux-gnu
           which zig || brew install zig
           which cargo-zigbuild || cargo install cargo-zigbuild
           which cargo-tauri || cargo install tauri-cli
@@ -68,25 +69,21 @@ jobs:
 
       - name: Build CLI (Linux x86_64, cross)
         run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
-          cargo zigbuild --release --target x86_64-unknown-linux-gnu -p clipster-server -p clipster-agent -p clipster-cli
+cargo zigbuild --release --target x86_64-unknown-linux-gnu -p clipster-server -p clipster-agent -p clipster-cli
 
       - name: Build CLI (Windows x86_64, cross)
         run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
-          cargo zigbuild --release --target x86_64-pc-windows-gnu -p clipster-server -p clipster-agent -p clipster-cli
+cargo zigbuild --release --target x86_64-pc-windows-gnu -p clipster-server -p clipster-agent -p clipster-cli
 
       # ── macOS DMGs ───────────────────────────────────
 
       - name: Build Tauri (macOS ARM64)
         run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
-          cd clipster-app && cargo tauri build
+cd clipster-app && cargo tauri build
 
       - name: Build Tauri (macOS x86_64)
         run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
-          cd clipster-app && cargo tauri build --target x86_64-apple-darwin
+cd clipster-app && cargo tauri build --target x86_64-apple-darwin
 
       # ── Package ──────────────────────────────────────
 
