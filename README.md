@@ -1,26 +1,27 @@
 <p align="center">
-  <img src="assets/logo.png" width="128" height="128" alt="Clipster logo">
+  <img src="assets/logo.png" width="128" height="128" alt="Clipster — a clipboard hipster">
 </p>
 <h1 align="center">Clipster</h1>
-<p align="center"><em>Copy here, paste there. Your clipboard, everywhere.</em></p>
+<p align="center"><em>Your clipboard's cooler, bearded cousin who syncs across all your devices.</em></p>
 
 <p align="center">
   <a href="https://github.com/calibrae/clipster/actions"><img src="https://github.com/calibrae/clipster/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/calibrae/clipster/releases/latest"><img src="https://img.shields.io/github/v/release/calibrae/clipster?color=a78bfa" alt="Release"></a>
   <img src="https://img.shields.io/badge/rust-stable-orange" alt="Rust">
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="Platforms">
+  <img src="https://img.shields.io/badge/vibe-artisanal-ff69b4" alt="Artisanal">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
 
 ---
 
-Self-hosted clipboard manager with cloud sync. Copy text or images on any machine, access them from any other. Built in Rust, runs on your hardware.
+Self-hosted clipboard manager for people who copy things on one machine and desperately need them on another. Text, images, synced in real-time. No cloud accounts, no subscriptions, no telemetry. Just your server, your data, your clipboard — with a man bun.
 
 ```
 ┌──────────────┐         ┌──────────────────┐         ┌──────────────┐
 │   MacBook    │         │  Clipster Server  │         │  Windows PC  │
 │              │──push──▶│                   │◀──push──│              │
-│  Cmd+C "hi"  │         │  SQLite + Web UI  │         │  Ctrl+C 🖼️  │
+│  Cmd+C "hi"  │         │  SQLite + Web UI  │         │  Ctrl+C 🖼️   │
 │              │◀──poll──│   :8743           │──poll──▶│              │
 │  sees 🖼️     │         │                   │         │  sees "hi"   │
 └──────────────┘         └──────────────────┘         └──────────────┘
@@ -31,25 +32,29 @@ Self-hosted clipboard manager with cloud sync. Copy text or images on any machin
                               └───────┘
 ```
 
-## Features
+## Why Clipster?
 
-- **Clipboard sync** — text and images, real-time across macOS / Linux / Windows
-- **Desktop app** — system tray, global hotkey (Cmd+Shift+V), embedded sync agent
+Because you're tired of emailing yourself links. Because Slack DMs to yourself feel wrong. Because AirDrop only works when it feels like it. Because you have a homelab and you're going to use it, dammit.
+
+## What's in the box
+
+- **Clipboard sync** — text and images, real-time, macOS / Linux / Windows
+- **Desktop app** — system tray, `Cmd+Shift+V` hotkey, syncs in the background
 - **Web UI** — dark theme, search, filters, favorites, click-to-copy
-- **Self-hosted** — your server, your data, your rules
-- **Built-in TLS** — auto-generated self-signed certs, no reverse proxy needed
-- **API key auth** — timing-safe Bearer token validation
+- **Self-hosted** — runs on a Raspberry Pi, a NAS, your homelab, or literally anything
+- **Built-in TLS** — auto-generates self-signed certs. No nginx required. We're not animals
+- **API key auth** — timing-safe validation, because we read the OWASP top 10
 - **Daemon support** — `install` / `uninstall` / `status` on every platform
-- **Small binaries** — server 3.3 MB, client 2 MB DMG (strip + LTO)
-- **Single setup** — `clipster-server setup` generates everything, prints client config
+- **Tiny binaries** — 3.3 MB server, 2 MB DMG. Smaller than your average node_modules
+- **One command setup** — `clipster-server setup` does everything
 
 ## Installation
 
 ### Pre-built binaries
 
-Download from [GitHub Releases](https://github.com/calibrae/clipster/releases/latest):
+Grab the latest from [Releases](https://github.com/calibrae/clipster/releases/latest):
 
-| Platform | File | Contents |
+| Platform | Download | What's inside |
 |---|---|---|
 | macOS (Apple Silicon) | `Clipster_aarch64.dmg` | Desktop app + server + CLI |
 | macOS (Intel) | `Clipster_x86_64.dmg` | Desktop app + server + CLI |
@@ -59,18 +64,20 @@ Download from [GitHub Releases](https://github.com/calibrae/clipster/releases/la
 ### Build from source
 
 ```bash
+git clone https://github.com/calibrae/clipster.git
+cd clipster
 cargo build --release --workspace
 ```
 
 ## Quick Start
 
-### 1. Setup the server
+### Step 1: Set up the server (30 seconds)
 
 ```bash
 clipster-server setup --tls
 ```
 
-Generates config + API key, prints everything you need:
+It generates your config, creates an API key, and tells you exactly what to do next:
 
 ```
 === Clipster Server Setup Complete ===
@@ -84,36 +91,38 @@ TLS:     true
   server_url = "https://10.10.0.2:8743"
   api_key = "clp_2iogpBAyxAuPLjjTCkf..."
   insecure = true
+
+--- Quick Start ---
+
+  clipster-agent --server https://10.10.0.2:8743 -k
 ```
 
-### 2. Run it
+### Step 2: Run it (or daemonize it)
 
 ```bash
-# Just run it
-clipster-server
-
-# Or install as a daemon
-clipster-server install   # launchd (macOS) / systemd (Linux) / schtasks (Windows)
-clipster-server status    # check it's running
+clipster-server                # just run it
+clipster-server install        # or install as a daemon (launchd / systemd / schtasks)
+clipster-server status         # is it vibing?
+clipster-server uninstall      # break up with it
 ```
 
-### 3. Connect clients
+### Step 3: Connect your devices
 
-**Desktop app** (macOS) — open `Clipster.app`, click the tray icon, go to Settings, paste your server URL + API key. Done. Clipboard syncs automatically.
+**Desktop app** (macOS) — open `Clipster.app` from the DMG, click the tray icon, hit the gear, paste your server URL + API key. That's it. Your clipboard now has a social life.
 
-**Headless** (Linux/Windows servers):
+**Headless machines** (Linux / Windows servers):
 ```bash
 clipster-agent --server https://10.10.0.2:8743 -k
 ```
 
-**CLI**:
+**CLI** (for the terminal purists):
 ```bash
-clipster-cli list              # recent clips
-clipster-cli search "foo"      # search
-clipster-cli copy <clip-id>    # copy to local clipboard
+clipster-cli list              # what's been copied lately?
+clipster-cli search "password" # oh no
+clipster-cli copy <clip-id>    # yoink it to your clipboard
 ```
 
-**Web UI** — just open `https://your-server:8743` in a browser.
+**Web UI** — open `https://your-server:8743` in a browser. Yes, it's dark mode. We're not savages.
 
 ## Architecture
 
@@ -121,65 +130,65 @@ clipster-cli copy <clip-id>    # copy to local clipboard
 clipster/
   clipster-common/     Shared types, models, config
   clipster-server/     REST API + embedded web UI + SQLite
-  clipster-agent/      Headless sync daemon (for servers without a GUI)
-  clipster-cli/        CLI interface
-  clipster-app/        Tauri v2 desktop app (tray + embedded sync)
-  web/                 HTML/CSS/JS (compiled into server + app)
+  clipster-agent/      Headless sync daemon (for machines without a GUI)
+  clipster-cli/        CLI tool
+  clipster-app/        Tauri v2 desktop app (tray + embedded sync agent)
+  web/                 HTML/CSS/JS (compiled into the binaries)
   deploy/              systemd service, Dockerfile, install script
 ```
 
-**Server** is a single binary: API, web UI, SQLite, TLS — all built in. No nginx, no Postgres, no Docker required (but a Dockerfile is included if you want it).
+**Server**: single binary. API, web UI, SQLite, TLS — all baked in. No nginx, no Postgres, no Docker required (Dockerfile included for those who can't help themselves).
 
-**Client app** is also a single binary: system tray, clipboard watcher, sync agent, settings — all in one `.app` / `.exe`.
+**Client app**: also a single binary. Tray icon, clipboard watcher, sync, settings — one `.app` or `.exe` to rule them all.
 
 ## API
 
-All endpoints under `/api/v1`. Authenticated via `Authorization: Bearer <key>`.
+All endpoints under `/api/v1`. Auth via `Authorization: Bearer <key>`.
 
-| Method | Path | Description |
+| Method | Path | What it does |
 |--------|------|-------------|
-| `POST` | `/clips` | Create clip (JSON for text, multipart for images) |
+| `POST` | `/clips` | Create a clip (JSON for text, multipart for images) |
 | `GET` | `/clips` | List / search (`?limit=&offset=&type=&search=&device=`) |
 | `GET` | `/clips/:id` | Get clip metadata |
-| `GET` | `/clips/:id/content` | Get raw content |
-| `DELETE` | `/clips/:id` | Soft-delete |
-| `PATCH` | `/clips/:id/favorite` | Toggle favorite |
-| `GET` | `/health` | Health check (no auth required) |
+| `GET` | `/clips/:id/content` | Get the actual content |
+| `DELETE` | `/clips/:id` | Soft-delete (we don't do hard deletes, we're not monsters) |
+| `PATCH` | `/clips/:id/favorite` | Star it for later |
+| `GET` | `/health` | Is the server alive? (no auth needed) |
 
 ## Deployment
 
-### Docker
+### Docker (for the containerized lifestyle)
 
 ```bash
 docker compose up -d
 ```
 
-### systemd (Linux)
+### systemd (for the Linux faithful)
 
 ```bash
 sudo deploy/install.sh
 ```
 
-### Manual
+### Manual (for the free spirits)
 
 ```bash
 clipster-server --bind 0.0.0.0:8743 --tls
 ```
 
-## Config
+## Config files
 
-Platform config directory (`~/.config/clipster/` on Linux, `~/Library/Application Support/com.clipster.clipster/` on macOS):
-
-| File | Used by | Key settings |
-|------|---------|-------------|
+| File | Who uses it | What's in it |
+|------|------------|-------------|
 | `server.toml` | Server | `bind`, `db_path`, `api_key`, `tls` |
 | `app.toml` | Desktop app | `server_url`, `api_key`, `insecure`, `sync_enabled` |
 | `client.toml` | Agent / CLI | `server_url`, `api_key`, `device_name` |
 
-## Stack
+Lives in `~/.config/clipster/` (Linux) or `~/Library/Application Support/com.clipster.clipster/` (macOS).
 
-Rust, axum, SQLite, Tauri v2, arboard, reqwest, tokio, rustls, clap.
+## Built with
+
+Rust, axum, SQLite, Tauri v2, arboard, reqwest, tokio, rustls, clap. Zero JavaScript frameworks were harmed in the making of this project.
 
 ## License
 
-MIT
+MIT — copy it, fork it, paste it. That's kind of our whole thing.
