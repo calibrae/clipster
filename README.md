@@ -54,12 +54,12 @@ Because you're tired of emailing yourself links. Because Slack DMs to yourself f
 
 Grab the latest from [Releases](https://github.com/calibrae/clipster/releases/latest):
 
-| Platform | Download | What's inside |
+| Platform | Desktop App | Server + CLI |
 |---|---|---|
-| macOS (Apple Silicon) | `Clipster_aarch64.dmg` | Desktop app + server + CLI |
-| macOS (Intel) | `Clipster_x86_64.dmg` | Desktop app + server + CLI |
-| Linux (x86_64) | `clipster-linux-x64.tar.gz` | Server + agent + CLI |
-| Windows (x86_64) | `clipster-windows-x64.tar.gz` | Server + agent + CLI |
+| macOS (Apple Silicon) | `Clipster_macOS_aarch64.dmg` | included in DMG |
+| macOS (Intel) | `Clipster_macOS_x86_64.dmg` | included in DMG |
+| Linux (x86_64) | `Clipster_linux_x86_64.AppImage` / `.deb` | `clipster-linux-x64.tar.gz` |
+| Windows (x86_64) | `Clipster_windows_x86_64.msi` / `_setup.exe` | `clipster-windows-x64.tar.gz` |
 
 ### Build from source
 
