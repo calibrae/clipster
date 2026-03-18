@@ -21,7 +21,7 @@ Self-hosted clipboard manager for people who copy things on one machine and desp
 +----------------+                +--------------------+                +----------------+
 |    MacBook     |                |  Clipster Server   |                |   Windows PC   |
 |                |----push------->|                    |<-----push------|                |
-|  Cmd+C "hi"   |                |   SQLite + Web UI  |                |   Ctrl+C img   |
+|  Cmd+C "hi"    |                |   SQLite + Web UI  |                |   Ctrl+C img   |
 |                |<---poll--------|      :8743         |------poll----->|                |
 |   sees img     |                |                    |                |   sees "hi"    |
 +----------------+                +--------------------+                +----------------+
