@@ -1,7 +1,8 @@
 <p align="center">
-  <h1 align="center">📋 Clipster</h1>
-  <p align="center">Copy here, paste there. Your clipboard, everywhere.</p>
+  <img src="assets/logo.png" width="128" height="128" alt="Clipster logo">
 </p>
+<h1 align="center">Clipster</h1>
+<p align="center"><em>Copy here, paste there. Your clipboard, everywhere.</em></p>
 
 <p align="center">
   <a href="https://github.com/calibrae/clipster/actions"><img src="https://github.com/calibrae/clipster/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
