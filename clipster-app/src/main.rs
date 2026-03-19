@@ -268,10 +268,11 @@ fn main() {
                 },
             )?;
 
-            // Spawn the clipboard sync agent in the background
+            // Spawn the clipboard sync agent on a dedicated thread with its own runtime
             let flag = restart_flag.clone();
-            tokio::spawn(async move {
-                sync::run_sync_loop(flag).await;
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+                rt.block_on(sync::run_sync_loop(flag));
             });
 
             Ok(())
