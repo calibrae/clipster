@@ -34,8 +34,19 @@ fn local_ip() -> String {
 }
 
 pub fn setup(bind: Option<&str>, tls: bool) -> Result<()> {
-    let config_path = config_dir().join("server.toml");
-    let data = data_dir();
+    #[cfg(unix)]
+    let is_root = unsafe { libc::geteuid() } == 0;
+    #[cfg(not(unix))]
+    let is_root = false;
+
+    let (config_path, data) = if is_root {
+        (
+            PathBuf::from("/etc/clipster/server.toml"),
+            PathBuf::from("/var/lib/clipster"),
+        )
+    } else {
+        (config_dir().join("server.toml"), data_dir())
+    };
 
     // Generate API key
     let api_key = generate_api_key();
@@ -52,7 +63,9 @@ pub fn setup(bind: Option<&str>, tls: bool) -> Result<()> {
     };
 
     // Write config
-    std::fs::create_dir_all(config_dir())?;
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::create_dir_all(&data)?;
     std::fs::create_dir_all(data.join("images"))?;
 

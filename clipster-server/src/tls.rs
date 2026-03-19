@@ -96,6 +96,9 @@ fn pem_to_der(pem: &str) -> Option<Vec<u8>> {
 }
 
 fn build_acceptor(cert_pem: &str, key_pem: &str) -> Result<TlsAcceptor> {
+    // Ensure a crypto provider is installed (reqwest may not have done it yet)
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let mut cert_reader = std::io::BufReader::new(cert_pem.as_bytes());
     let mut key_reader = std::io::BufReader::new(key_pem.as_bytes());
 

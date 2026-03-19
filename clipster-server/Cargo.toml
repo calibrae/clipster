@@ -27,7 +27,7 @@ anyhow = "1"
 multer = "3"
 futures-util = "0.3"
 rcgen = "0.13"
-rustls = "0.23"
+rustls = { version = "0.23", features = ["ring"] }
 tokio-rustls = "0.26"
 rustls-pemfile = "2"
 sha1 = "0.10"
