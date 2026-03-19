@@ -86,7 +86,15 @@ pub fn setup(bind: Option<&str>, tls: bool) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&config_path, std::fs::Permissions::from_mode(0o600))?;
+        if is_root {
+            // readable by clipster group, not world
+            std::fs::set_permissions(&config_path, std::fs::Permissions::from_mode(0o640))?;
+            let _ = std::process::Command::new("chown")
+                .args(["root:clipster", &config_path.to_string_lossy()])
+                .status();
+        } else {
+            std::fs::set_permissions(&config_path, std::fs::Permissions::from_mode(0o600))?;
+        }
     }
 
     let protocol = if tls { "https" } else { "http" };
