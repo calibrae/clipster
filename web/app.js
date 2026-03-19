@@ -156,7 +156,7 @@ async function loadClips() {
   if (activeFilter !== 'all') qs += `&content_type=${activeFilter}`;
 
   try {
-    const data = await apiGet(`/api/v1/clips${qs}`);
+    const data = await apiGet(`/clips${qs}`);
 
     const clips = data.clips || [];
     const newIds = clips.map(c => c.id).join(',');
@@ -168,7 +168,7 @@ async function loadClips() {
     render(clips);
   } catch (e) {
     console.error('Failed to load clips:', e);
-    showToast('Failed to load clips');
+    showToast('Failed to load clips: ' + e.message);
   }
 }
 
@@ -255,7 +255,7 @@ function render(clips) {
 
 async function loadImageProxy(img, clipId) {
   try {
-    const b64 = await invoke('api_fetch_bytes', { path: `/api/v1/clips/${clipId}/content` });
+    const b64 = await invoke('api_fetch_bytes', { path: `/clips/${clipId}/content` });
     img.src = `data:image/png;base64,${b64}`;
   } catch (e) {
     console.error('Failed to load image:', e);
@@ -269,7 +269,7 @@ async function copyClip(el) {
   const type = el.dataset.type;
   try {
     if (type === 'text') {
-      const text = await apiGetText(`/api/v1/clips/${encodeURIComponent(id)}/content`);
+      const text = await apiGetText(`/clips/${encodeURIComponent(id)}/content`);
       if (IS_TAURI) {
         await invoke('copy_to_clipboard', { text });
       } else {
@@ -277,7 +277,7 @@ async function copyClip(el) {
       }
     } else if (type === 'image') {
       if (IS_TAURI) {
-        const b64 = await invoke('api_fetch_bytes', { path: `/api/v1/clips/${id}/content` });
+        const b64 = await invoke('api_fetch_bytes', { path: `/clips/${id}/content` });
         const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
         await invoke('copy_image_to_clipboard', { pngData: Array.from(bytes) });
       } else {
@@ -300,7 +300,7 @@ async function copyClip(el) {
 
 async function toggleFav(id, el) {
   try {
-    const data = await apiPatch(`/api/v1/clips/${encodeURIComponent(id)}/favorite`);
+    const data = await apiPatch(`/clips/${encodeURIComponent(id)}/favorite`);
     el.innerHTML = data.is_favorite ? '&#9733;' : '&#9734;';
     el.classList.toggle('is-fav', data.is_favorite);
   } catch (e) {
@@ -332,7 +332,7 @@ modalConfirm.addEventListener('click', async () => {
   const id = pendingDeleteId;
   closeModal();
   try {
-    await apiDelete(`/api/v1/clips/${encodeURIComponent(id)}`);
+    await apiDelete(`/clips/${encodeURIComponent(id)}`);
     const el = clipsEl.querySelector(`.clip[data-id="${CSS.escape(id)}"]`);
     if (el) {
       el.style.transition = 'opacity 0.2s, transform 0.2s';

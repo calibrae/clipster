@@ -20,6 +20,15 @@ use crate::state::AppState;
 
 const MAX_BODY_SIZE: usize = 50 * 1024 * 1024; // 50 MB
 
+fn session_token(api_key: &Option<String>) -> String {
+    use sha2::{Sha256, Digest};
+    let secret = api_key.as_deref().unwrap_or("clipster-no-key");
+    let mut hasher = Sha256::new();
+    hasher.update(b"clipster-session:");
+    hasher.update(secret.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
 #[derive(Embed)]
 #[folder = "../web/"]
 struct WebAssets;
@@ -54,11 +63,7 @@ async fn security_headers(req: Request, next: Next) -> Response {
     let h = resp.headers_mut();
     h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
     h.insert("x-frame-options", HeaderValue::from_static("DENY"));
-    h.insert(
-        "content-security-policy",
-        HeaderValue::from_static("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"),
-    );
-    h.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
+    h.insert("referrer-policy", HeaderValue::from_static("same-origin"));
     resp
 }
 
@@ -67,46 +72,30 @@ async fn auth_middleware(
     req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    // Same-origin requests (from the embedded web UI) skip auth
-    let is_same_origin = req
-        .headers()
-        .get("sec-fetch-site")
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v == "same-origin")
-        .unwrap_or(false);
-
-    if is_same_origin {
-        return Ok(next.run(req).await);
-    }
-
     let Some(ref expected_key) = state.api_key else {
-        // No API key configured — allow all requests
         return Ok(next.run(req).await);
     };
 
-    let provided = req
+    // If no Authorization header, allow (web UI, browser)
+    // Auth only enforced when a Bearer token is explicitly provided
+    let Some(provided) = req
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
+        .and_then(|v| v.strip_prefix("Bearer "))
+    else {
+        return Ok(next.run(req).await);
+    };
 
-    match provided {
-        Some(token) => {
-            let token_bytes = token.as_bytes();
-            let expected_bytes = expected_key.as_bytes();
-            if token_bytes.len() == expected_bytes.len()
-                && token_bytes.ct_eq(expected_bytes).into()
-            {
-                Ok(next.run(req).await)
-            } else {
-                tracing::warn!("rejected request: invalid API key");
-                Err(AppError::unauthorized())
-            }
-        }
-        None => {
-            tracing::warn!("rejected request: missing Authorization header");
-            Err(AppError::unauthorized())
-        }
+    let token_bytes = provided.as_bytes();
+    let expected_bytes = expected_key.as_bytes();
+    if token_bytes.len() == expected_bytes.len()
+        && token_bytes.ct_eq(expected_bytes).into()
+    {
+        Ok(next.run(req).await)
+    } else {
+        tracing::warn!("rejected request: invalid API key");
+        Err(AppError::unauthorized())
     }
 }
 
@@ -314,16 +303,27 @@ async fn toggle_favorite(
     Ok(Json(serde_json::json!({ "is_favorite": is_fav })))
 }
 
-async fn static_handler(uri: axum::http::Uri) -> impl IntoResponse {
+async fn static_handler(
+    State(state): State<AppState>,
+    uri: axum::http::Uri,
+) -> impl IntoResponse {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
+
+    let session_cookie = format!(
+        "clipster_session={}; Path=/; HttpOnly; SameSite=Lax",
+        session_token(&state.api_key)
+    );
 
     match WebAssets::get(path) {
         Some(content) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
             (
                 StatusCode::OK,
-                [(header::CONTENT_TYPE, mime.as_ref())],
+                [
+                    (header::CONTENT_TYPE, mime.as_ref().to_string()),
+                    (header::SET_COOKIE, session_cookie),
+                ],
                 content.data.into_owned(),
             )
                 .into_response()
@@ -332,7 +332,10 @@ async fn static_handler(uri: axum::http::Uri) -> impl IntoResponse {
             match WebAssets::get("index.html") {
                 Some(content) => (
                     StatusCode::OK,
-                    [(header::CONTENT_TYPE, "text/html")],
+                    [
+                        (header::CONTENT_TYPE, "text/html".to_string()),
+                        (header::SET_COOKIE, session_cookie),
+                    ],
                     content.data.into_owned(),
                 )
                     .into_response(),
