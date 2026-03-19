@@ -1,7 +1,6 @@
 const IS_TAURI = window.__TAURI_INTERNALS__ !== undefined;
 const invoke = IS_TAURI ? window.__TAURI_INTERNALS__.invoke : null;
 let API = '/api/v1';
-let WEB_API_KEY = localStorage.getItem('clipster_api_key') || '';
 
 const clipsEl = document.getElementById('clips');
 const searchEl = document.getElementById('search');
@@ -20,20 +19,13 @@ let lastClipIds = '';
 // In Tauri: all requests go through Rust (handles TLS, auth)
 // In browser: direct fetch to server
 
-function webHeaders(extra) {
-  const h = {};
-  if (WEB_API_KEY) h['Authorization'] = `Bearer ${WEB_API_KEY}`;
-  return { ...h, ...extra };
-}
-
 async function apiGet(path) {
   if (IS_TAURI) {
     const res = await invoke('api_request', { req: { method: 'GET', path } });
     if (res.status >= 400) throw new Error(`HTTP ${res.status}: ${res.body}`);
     return JSON.parse(res.body);
   }
-  const resp = await fetch(`${API}${path}`, { headers: webHeaders() });
-  if (resp.status === 401) { promptApiKey(); throw new Error('unauthorized'); }
+  const resp = await fetch(`${API}${path}`);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
@@ -44,7 +36,7 @@ async function apiGetText(path) {
     if (res.status >= 400) throw new Error(`HTTP ${res.status}`);
     return res.body;
   }
-  const resp = await fetch(`${API}${path}`, { headers: webHeaders() });
+  const resp = await fetch(`${API}${path}`);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.text();
 }
@@ -53,7 +45,7 @@ async function apiGetBytes(path) {
   if (IS_TAURI) {
     return await invoke('api_fetch_bytes', { path });
   }
-  const resp = await fetch(`${API}${path}`, { headers: webHeaders() });
+  const resp = await fetch(`${API}${path}`);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const buf = await resp.arrayBuffer();
   return btoa(String.fromCharCode(...new Uint8Array(buf)));
@@ -65,7 +57,7 @@ async function apiPost(path, body) {
     if (res.status >= 400) throw new Error(`HTTP ${res.status}: ${res.body}`);
     return JSON.parse(res.body);
   }
-  const resp = await fetch(`${API}${path}`, { method: 'POST', headers: webHeaders({ 'content-type': 'application/json' }), body: JSON.stringify(body) });
+  const resp = await fetch(`${API}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
@@ -76,7 +68,7 @@ async function apiDelete(path) {
     if (res.status >= 400) throw new Error(`HTTP ${res.status}: ${res.body}`);
     return;
   }
-  const resp = await fetch(`${API}${path}`, { method: 'DELETE', headers: webHeaders() });
+  const resp = await fetch(`${API}${path}`, { method: 'DELETE' });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 }
 
@@ -86,23 +78,9 @@ async function apiPatch(path) {
     if (res.status >= 400) throw new Error(`HTTP ${res.status}: ${res.body}`);
     return JSON.parse(res.body);
   }
-  const resp = await fetch(`${API}${path}`, { method: 'PATCH', headers: webHeaders() });
+  const resp = await fetch(`${API}${path}`, { method: 'PATCH' });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
-}
-
-let promptingKey = false;
-function promptApiKey() {
-  if (promptingKey) return;
-  promptingKey = true;
-  const key = prompt('Enter API key:');
-  promptingKey = false;
-  if (key !== null && key.trim()) {
-    WEB_API_KEY = key.trim();
-    localStorage.setItem('clipster_api_key', WEB_API_KEY);
-    lastClipIds = '';
-    loadClips();
-  }
 }
 
 function imageUrl(clipId) {
@@ -111,15 +89,6 @@ function imageUrl(clipId) {
     return '';
   }
   return `${API}/clips/${encodeURIComponent(clipId)}/content`;
-}
-
-// ── API key (browser only) ───────────────────────────
-
-const keyBtn = document.getElementById('key-btn');
-if (IS_TAURI) {
-  keyBtn.hidden = true;
-} else {
-  keyBtn.addEventListener('click', promptApiKey);
 }
 
 // ── Filters ──────────────────────────────────────────
@@ -198,10 +167,8 @@ async function loadClips() {
     updateCount(clips.length);
     render(clips);
   } catch (e) {
-    if (e.message !== 'unauthorized') {
-      console.error('Failed to load clips:', e);
-      showToast('Failed to load clips');
-    }
+    console.error('Failed to load clips:', e);
+    showToast('Failed to load clips');
   }
 }
 

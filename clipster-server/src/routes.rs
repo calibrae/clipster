@@ -67,6 +67,18 @@ async fn auth_middleware(
     req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
+    // Same-origin requests (from the embedded web UI) skip auth
+    let is_same_origin = req
+        .headers()
+        .get("sec-fetch-site")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v == "same-origin")
+        .unwrap_or(false);
+
+    if is_same_origin {
+        return Ok(next.run(req).await);
+    }
+
     let Some(ref expected_key) = state.api_key else {
         // No API key configured — allow all requests
         return Ok(next.run(req).await);
@@ -82,7 +94,6 @@ async fn auth_middleware(
         Some(token) => {
             let token_bytes = token.as_bytes();
             let expected_bytes = expected_key.as_bytes();
-            // Constant-time comparison to prevent timing attacks
             if token_bytes.len() == expected_bytes.len()
                 && token_bytes.ct_eq(expected_bytes).into()
             {
