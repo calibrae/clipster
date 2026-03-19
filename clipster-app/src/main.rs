@@ -152,7 +152,7 @@ async fn api_fetch_bytes(path: String) -> Result<String, String> {
     let settings = current_settings();
     let client = build_http_client(&settings);
     let base = settings.server_url.trim_end_matches('/');
-    let url = format!("{}{}", base, path);
+    let url = format!("{}/api/v1{}", base, path);
 
     let mut builder = client.get(&url);
     if !settings.api_key.is_empty() {
