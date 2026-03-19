@@ -110,7 +110,7 @@ async fn api_request(req: ApiRequest) -> Result<ApiResponse, String> {
     let settings = current_settings();
     let client = build_http_client(&settings);
     let base = settings.server_url.trim_end_matches('/');
-    let url = format!("{}{}", base, req.path);
+    let url = format!("{}/api/v1{}", base, req.path);
 
     let mut builder = match req.method.to_uppercase().as_str() {
         "GET" => client.get(&url),
