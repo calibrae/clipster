@@ -304,6 +304,18 @@ fn toggle_window(app: &tauri::AppHandle) {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
         } else {
+            // Position near system tray (bottom-right of screen)
+            if let Ok(Some(monitor)) = window.primary_monitor() {
+                let screen = monitor.size();
+                let scale = monitor.scale_factor();
+                let w = 400.0;
+                let h = 600.0;
+                let x = (screen.width as f64 / scale) - w - 12.0;
+                let y = (screen.height as f64 / scale) - h - 48.0;
+                let _ = window.set_position(tauri::Position::Logical(
+                    tauri::LogicalPosition::new(x, y),
+                ));
+            }
             let _ = window.show();
             let _ = window.set_focus();
         }

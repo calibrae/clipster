@@ -22,6 +22,11 @@ header {
   background: linear-gradient(180deg, #09090b 60%, transparent);
   padding: 1.25rem 0 1rem;
   margin-bottom: 0.5rem;
+  -webkit-app-region: drag;
+}
+
+header input, header button, header .filters {
+  -webkit-app-region: no-drag;
 }
 
 .header-top {
