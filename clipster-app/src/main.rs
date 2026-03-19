@@ -275,13 +275,19 @@ fn main() {
                 rt.block_on(sync::run_sync_loop(flag));
             });
 
-            // Intercept window close — hide instead of quit
+            // Intercept window close and focus loss — hide instead of quit
             let window = app.get_webview_window("main").unwrap();
             let w = window.clone();
             window.on_window_event(move |event| {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = w.hide();
+                match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        let _ = w.hide();
+                    }
+                    tauri::WindowEvent::Focused(false) => {
+                        let _ = w.hide();
+                    }
+                    _ => {}
                 }
             });
 
