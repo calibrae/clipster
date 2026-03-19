@@ -220,6 +220,15 @@ fn copy_image_to_clipboard(png_data: Vec<u8>) -> Result<(), String> {
 // ── Main ─────────────────────────────────────────────
 
 fn main() {
+    // Hide from Cmd+Tab on macOS (agent/accessory app)
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+        let mtm = unsafe { objc2::MainThreadMarker::new_unchecked() };
+        let app = NSApplication::sharedApplication(mtm);
+        app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+    }
+
     let settings = load_settings();
     SETTINGS.set(Mutex::new(settings)).ok();
 
@@ -250,10 +259,11 @@ fn main() {
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
+                        position,
                         ..
                     } = event
                     {
-                        toggle_window(tray.app_handle());
+                        show_window_at(tray.app_handle(), position.x, position.y);
                     }
                 })
                 .build(app)?;
@@ -305,19 +315,66 @@ fn main() {
         .expect("error while running Clipster");
 }
 
+fn show_window_at(app: &tauri::AppHandle, tray_x: f64, tray_y: f64) {
+    if let Some(window) = app.get_webview_window("main") {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+            return;
+        }
+
+        let w = 400.0_f64;
+        #[allow(unused)]
+        let h = 600.0_f64;
+
+        if let Ok(Some(monitor)) = window.primary_monitor() {
+            let screen = monitor.size();
+            let scale = monitor.scale_factor();
+            let screen_w = screen.width as f64 / scale;
+
+            #[cfg(target_os = "macos")]
+            let (x, y) = {
+                // macOS: tray is at the top — position window below the icon
+                let x = (tray_x - w / 2.0).clamp(8.0, screen_w - w - 8.0);
+                (x, tray_y + 8.0)
+            };
+
+            #[cfg(not(target_os = "macos"))]
+            let (x, y) = {
+                // Windows/Linux: tray is at the bottom — position window above the icon
+                let x = (tray_x - w / 2.0).clamp(8.0, screen_w - w - 8.0);
+                (x, (tray_y - h - 8.0).max(8.0))
+            };
+
+            let _ = window.set_position(tauri::Position::Logical(
+                tauri::LogicalPosition::new(x, y),
+            ));
+        }
+
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 fn toggle_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
         } else {
-            // Position near system tray (bottom-right of screen)
+            // Hotkey fallback — use last known position or screen edge
             if let Ok(Some(monitor)) = window.primary_monitor() {
                 let screen = monitor.size();
                 let scale = monitor.scale_factor();
-                let w = 400.0;
-                let h = 600.0;
-                let x = (screen.width as f64 / scale) - w - 12.0;
-                let y = (screen.height as f64 / scale) - h - 48.0;
+                let screen_w = screen.width as f64 / scale;
+
+                #[cfg(target_os = "macos")]
+                let (x, y) = (screen_w - 400.0 - 12.0, 30.0);
+
+                #[cfg(not(target_os = "macos"))]
+                let (x, y) = {
+                    let screen_h = screen.height as f64 / scale;
+                    (screen_w - 400.0 - 12.0, screen_h - 600.0 - 48.0)
+                };
+
                 let _ = window.set_position(tauri::Position::Logical(
                     tauri::LogicalPosition::new(x, y),
                 ));

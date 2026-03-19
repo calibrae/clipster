@@ -11,7 +11,10 @@
     "icon": [
       "icons/icon.png",
       "icons/icon.ico"
-    ]
+    ],
+"macOS": {
+      "minimumSystemVersion": "10.15"
+    }
   },
   "app": {
     "withGlobalTauri": true,
