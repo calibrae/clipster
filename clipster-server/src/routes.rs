@@ -30,7 +30,7 @@ fn session_token(api_key: &Option<String>) -> String {
 }
 
 #[derive(Embed)]
-#[folder = "../web/"]
+#[folder = "../web/dist/"]
 struct WebAssets;
 
 pub fn router(state: AppState) -> Router {

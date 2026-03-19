@@ -2,9 +2,9 @@
   "name": "clipster-web",
   "private": true,
   "scripts": {
-    "build": "esbuild src/app.ts --bundle --outfile=app.js --format=iife --target=es2020 --minify",
-    "build:dev": "esbuild src/app.ts --bundle --outfile=app.js --format=iife --target=es2020 --sourcemap",
-    "watch": "esbuild src/app.ts --bundle --outfile=app.js --format=iife --target=es2020 --sourcemap --watch",
+    "build": "esbuild src/app.ts --bundle --outfile=dist/app.js --format=iife --target=es2020 --minify && cp index.html style.css dist/",
+    "build:dev": "esbuild src/app.ts --bundle --outfile=dist/app.js --format=iife --target=es2020 --sourcemap && cp index.html style.css dist/",
+    "watch": "esbuild src/app.ts --bundle --outfile=dist/app.js --format=iife --target=es2020 --sourcemap --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

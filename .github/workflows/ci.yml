@@ -69,6 +69,9 @@ jobs:
           which cargo-zigbuild || cargo install cargo-zigbuild
           which cargo-tauri || cargo install tauri-cli
 
+      - name: Build web assets
+        run: cd web && npm ci && npm run build
+
       - name: Build CLI (macOS ARM64)
         run: cargo build --release -p clipster-server -p clipster-agent -p clipster-cli
 
@@ -103,25 +106,53 @@ jobs:
           cp README.md "$DIR/"
           tar czf "${DIR}.tar.gz" "$DIR"
 
-      - name: Build fat DMGs
+      - name: Unlock keychain
+        env:
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/login.keychain-db
+
+      - name: Sign, package, notarize DMGs
+        run: |
+          IDENTITY="Developer ID Application: Nico Bousquet (XJQQCN392F)"
+          ENTITLEMENTS="clipster-app/capabilities/entitlements.plist"
+
           for ARCH in aarch64 x86_64; do
             if [ "$ARCH" = "aarch64" ]; then
-              SRC_DMG=$(ls target/release/bundle/dmg/*.dmg)
+              APP="target/release/bundle/macos/Clipster.app"
               BIN_DIR="target/release"
             else
-              SRC_DMG=$(ls target/x86_64-apple-darwin/release/bundle/dmg/*.dmg)
+              APP="target/x86_64-apple-darwin/release/bundle/macos/Clipster.app"
               BIN_DIR="target/x86_64-apple-darwin/release"
             fi
-            MOUNT=$(mktemp -d)
-            hdiutil attach "$SRC_DMG" -mountpoint "$MOUNT" -nobrowse -quiet
+
+            # Sign the .app
+            codesign --force --deep --sign "$IDENTITY" --options runtime \
+              --entitlements "$ENTITLEMENTS" "$APP"
+
+            # Build DMG with app + server + CLI
             STAGE=$(mktemp -d)
-            cp -R "$MOUNT"/* "$STAGE"/
-            hdiutil detach "$MOUNT" -quiet
+            cp -R "$APP" "$STAGE/"
             cp "${BIN_DIR}/clipster-server" "$STAGE/"
             cp "${BIN_DIR}/clipster-cli" "$STAGE/"
-            hdiutil create -srcfolder "$STAGE" -volname "Clipster" -format UDZO -o "Clipster_macOS_${ARCH}.dmg"
+            ln -s /Applications "$STAGE/Applications"
+            DMG="Clipster_macOS_${ARCH}.dmg"
+            hdiutil create -srcfolder "$STAGE" -volname "Clipster" -format UDZO -o "$DMG"
             rm -rf "$STAGE"
+
+            # Sign the DMG
+            codesign --force --sign "$IDENTITY" "$DMG"
+
+            # Notarize
+            xcrun notarytool submit "$DMG" \
+              --key ~/.privatekeys/AuthKey_Z43Q26MB7Y.p8 \
+              --key-id Z43Q26MB7Y \
+              --issuer 69a6de85-e83f-47e3-e053-5b8c7c11a4d1 \
+              --wait --timeout 10m
+
+            # Staple
+            xcrun stapler staple "$DMG"
           done
 
       - uses: actions/upload-artifact@v4
@@ -179,6 +210,9 @@ jobs:
           key: linux-app-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: linux-app-
 
+      - name: Build web assets
+        run: cd web && npm ci && npm run build
+
       - name: Build Tauri (Linux x86_64)
         run: cd clipster-app && cargo tauri build
 
@@ -217,6 +251,9 @@ jobs:
             target
           key: windows-app-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: windows-app-
+
+      - name: Build web assets
+        run: cd web && npm ci && npm run build
 
       - name: Build Tauri (Windows x86_64)
         run: cd clipster-app && cargo tauri build

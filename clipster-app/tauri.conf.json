@@ -2,9 +2,9 @@
   "$schema": "https://raw.githubusercontent.com/nicegram/nicegram-web/release-2.2-b/nicegram.schema.json",
   "productName": "Clipster",
   "version": "0.1.0",
-  "identifier": "com.clipster.app",
+  "identifier": "com.clipster.desktop",
   "build": {
-    "frontendDist": "../web"
+    "frontendDist": "../web/dist"
   },
   "bundle": {
     "active": true,
