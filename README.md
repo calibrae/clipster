@@ -9,13 +9,14 @@
   <a href="https://github.com/calibrae/clipster/releases/latest"><img src="https://img.shields.io/github/v/release/calibrae/clipster?color=a78bfa" alt="Release"></a>
   <img src="https://img.shields.io/badge/rust-stable-orange" alt="Rust">
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="Platforms">
-  <img src="https://img.shields.io/badge/vibe-artisanal-ff69b4" alt="Artisanal">
+  <img src="https://img.shields.io/badge/macOS-signed%20%2B%20notarized-brightgreen" alt="Notarized">
+  <img src="https://img.shields.io/badge/vibe-steampunk-cd7f32" alt="Steampunk">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
 
 ---
 
-Self-hosted clipboard manager for people who copy things on one machine and desperately need them on another. Text, images, synced in real-time. No cloud accounts, no subscriptions, no telemetry. Just your server, your data, your clipboard — with a man bun.
+Self-hosted clipboard manager for people who copy things on one machine and desperately need them on another. Text, images, synced in real-time. No cloud accounts, no subscriptions, no telemetry. Just your server, your data, your clipboard.
 
 ```
 +----------------+                +--------------------+                +----------------+
@@ -39,14 +40,19 @@ Because you're tired of emailing yourself links. Because Slack DMs to yourself f
 ## What's in the box
 
 - **Clipboard sync** — text and images, real-time, macOS / Linux / Windows
-- **Desktop app** — system tray, `Cmd+Shift+V` hotkey, syncs in the background
-- **Web UI** — dark theme, search, filters, favorites, click-to-copy
+- **Native desktop apps** — system tray on all platforms, `Cmd+Shift+V` / `Ctrl+Shift+V` hotkey, embedded sync agent
+- **Web UI** — dark theme, search, filters, favorites, click-to-copy, zero-config auth (just works)
 - **Self-hosted** — runs on a Raspberry Pi, a NAS, your homelab, or literally anything
 - **Built-in TLS** — auto-generates self-signed certs. No nginx required. We're not animals
 - **API key auth** — timing-safe validation, because we read the OWASP top 10
-- **Daemon support** — `install` / `uninstall` / `status` on every platform
+- **macOS signed + notarized** — no Gatekeeper warnings, no `xattr -cr`, just double-click
+- **Windows MSI + NSIS installer** — proper install/uninstall, no loose EXEs
+- **Linux AppImage + .deb** — works on any distro
+- **Daemon support** — `install` / `uninstall` / `status` on every platform (launchd / systemd / schtasks)
 - **Tiny binaries** — 3.3 MB server, 2 MB DMG. Smaller than your average node_modules
-- **One command setup** — `clipster-server setup` does everything
+- **One command setup** — `clipster-server setup` generates everything, prints client config
+- **TypeScript web UI** — strict types, 64 unit + integration tests, esbuild bundled
+- **CI/CD pipeline** — builds all platforms, signs macOS, notarizes with Apple, publishes releases
 
 ## Installation
 
@@ -61,12 +67,16 @@ Grab the latest from [Releases](https://github.com/calibrae/clipster/releases/la
 | Linux (x86_64) | `Clipster_linux_x86_64.AppImage` / `.deb` | `clipster-linux-x64.tar.gz` |
 | Windows (x86_64) | `Clipster_windows_x86_64.msi` / `_setup.exe` | `clipster-windows-x64.tar.gz` |
 
+macOS DMGs are **signed and notarized** with a Developer ID certificate — no security warnings.
+
 ### Build from source
 
 ```bash
 git clone https://github.com/calibrae/clipster.git
 cd clipster
-cargo build --release --workspace
+cd web && npm ci && npm run build && cd ..   # build web UI
+cargo build --release --workspace            # build everything
+cd clipster-app && cargo tauri build         # build desktop app
 ```
 
 ## Quick Start
@@ -82,7 +92,7 @@ It generates your config, creates an API key, and tells you exactly what to do n
 ```
 === Clipster Server Setup Complete ===
 
-Config:  ~/.config/clipster/server.toml
+Config:  /etc/clipster/server.toml
 Bind:    0.0.0.0:8743
 TLS:     true
 
@@ -91,26 +101,28 @@ TLS:     true
   server_url = "https://10.10.0.2:8743"
   api_key = "clp_2iogpBAyxAuPLjjTCkf..."
   insecure = true
-
---- Quick Start ---
-
-  clipster-agent --server https://10.10.0.2:8743 -k
 ```
+
+Running as root? It creates a `clipster` system user, writes to `/etc/clipster/`, stores data in `/var/lib/clipster/`, and sets proper permissions. Running as a normal user? It uses your config directory instead.
 
 ### Step 2: Run it (or daemonize it)
 
 ```bash
 clipster-server                # just run it
-clipster-server install        # or install as a daemon (launchd / systemd / schtasks)
+clipster-server install        # install as daemon (launchd / systemd / schtasks)
 clipster-server status         # is it vibing?
 clipster-server uninstall      # break up with it
 ```
 
 ### Step 3: Connect your devices
 
-**Desktop app** (macOS) — open `Clipster.app` from the DMG, click the tray icon, hit the gear, paste your server URL + API key. That's it. Your clipboard now has a social life.
+**Desktop app** — open from the DMG (macOS), MSI (Windows), or AppImage (Linux). Click the tray icon, open Settings, paste your server URL + API key. Done. Clipboard syncs automatically in the background.
 
-**Headless machines** (Linux / Windows servers):
+The app lives in the system tray — no dock icon, no Cmd+Tab entry, no taskbar button. Click the tray icon to toggle the clip panel. Click outside to dismiss. `Cmd+Shift+V` / `Ctrl+Shift+V` to toggle from anywhere.
+
+**Web UI** — open `http://your-server:8743` in a browser. No login needed — the embedded web UI is automatically trusted. External API clients need the Bearer token.
+
+**Headless machines** (Linux / Windows servers without a GUI):
 ```bash
 clipster-agent --server https://10.10.0.2:8743 -k
 ```
@@ -122,8 +134,6 @@ clipster-cli search "password" # oh no
 clipster-cli copy <clip-id>    # yoink it to your clipboard
 ```
 
-**Web UI** — open `https://your-server:8743` in a browser. Yes, it's dark mode. We're not savages.
-
 ## Architecture
 
 ```
@@ -133,17 +143,17 @@ clipster/
   clipster-agent/      Headless sync daemon (for machines without a GUI)
   clipster-cli/        CLI tool
   clipster-app/        Tauri v2 desktop app (tray + embedded sync agent)
-  web/                 HTML/CSS/JS (compiled into the binaries)
+  web/                 TypeScript source + esbuild bundle
   deploy/              systemd service, Dockerfile, install script
 ```
 
 **Server**: single binary. API, web UI, SQLite, TLS — all baked in. No nginx, no Postgres, no Docker required (Dockerfile included for those who can't help themselves).
 
-**Client app**: also a single binary. Tray icon, clipboard watcher, sync, settings — one `.app` or `.exe` to rule them all.
+**Client app**: also a single binary. System tray, clipboard watcher, sync agent, settings panel — one `.app` / `.exe` / AppImage to rule them all. The Tauri app proxies all API calls through Rust, so self-signed TLS works transparently.
 
 ## API
 
-All endpoints under `/api/v1`. Auth via `Authorization: Bearer <key>`.
+All endpoints under `/api/v1`. External clients auth via `Authorization: Bearer <key>`. The embedded web UI skips auth automatically.
 
 | Method | Path | What it does |
 |--------|------|-------------|
@@ -157,23 +167,57 @@ All endpoints under `/api/v1`. Auth via `Authorization: Bearer <key>`.
 
 ## Deployment
 
-### Docker (for the containerized lifestyle)
+### Docker
 
 ```bash
 docker compose up -d
 ```
 
-### systemd (for the Linux faithful)
+### systemd (Linux, as root)
 
 ```bash
-sudo deploy/install.sh
+sudo clipster-server setup
+sudo clipster-server install
 ```
 
-### Manual (for the free spirits)
+### systemd (Linux, as user)
 
 ```bash
-clipster-server --bind 0.0.0.0:8743 --tls
+clipster-server setup
+clipster-server install
 ```
+
+### launchd (macOS)
+
+```bash
+clipster-server install
+```
+
+### Windows
+
+```bash
+clipster-server install   # creates a scheduled task
+```
+
+## Security
+
+- **API key auth** with constant-time comparison (`subtle` crate)
+- **Built-in TLS** with auto-generated self-signed certificates
+- **Request body limits** (50 MB max)
+- **Security headers** (X-Content-Type-Options, X-Frame-Options, Referrer-Policy)
+- **Hardened systemd unit** (ProtectSystem=strict, NoNewPrivileges, PrivateTmp)
+- **macOS hardened runtime** + notarization
+- **Web UI auto-auth** — same-origin requests skip API key (no credentials in the browser)
+- **Error sanitization** — internal errors logged server-side, generic messages to clients
+
+## Testing
+
+```bash
+cargo test --workspace --exclude clipster-app   # 29 Rust tests
+cd web && npm test                               # 35 TypeScript tests
+```
+
+64 tests total: models, hashing, serde, database CRUD, API endpoints, time formatting, API path construction, browser client integration, Tauri proxy integration.
 
 ## Config files
 
@@ -183,11 +227,11 @@ clipster-server --bind 0.0.0.0:8743 --tls
 | `app.toml` | Desktop app | `server_url`, `api_key`, `insecure`, `sync_enabled` |
 | `client.toml` | Agent / CLI | `server_url`, `api_key`, `device_name` |
 
-Lives in `~/.config/clipster/` (Linux) or `~/Library/Application Support/com.clipster.clipster/` (macOS).
+Lives in `~/.config/clipster/` (Linux), `~/Library/Application Support/com.clipster.clipster/` (macOS), or `%APPDATA%\clipster\` (Windows). Root installs use `/etc/clipster/`.
 
 ## Built with
 
-Rust, axum, SQLite, Tauri v2, arboard, reqwest, tokio, rustls, clap. Zero JavaScript frameworks were harmed in the making of this project.
+Rust, TypeScript, axum, SQLite, Tauri v2, arboard, reqwest, tokio, rustls, esbuild, vitest, clap. Zero JavaScript frameworks were harmed in the making of this project.
 
 ## License
 
