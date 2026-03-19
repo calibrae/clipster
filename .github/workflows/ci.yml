@@ -127,15 +127,22 @@ jobs:
               BIN_DIR="target/x86_64-apple-darwin/release"
             fi
 
-            # Sign the .app
+            # Sign everything
             codesign --force --deep --sign "$IDENTITY" --options runtime \
               --entitlements "$ENTITLEMENTS" "$APP"
-
-            # Sign the CLI binaries too
             codesign --force --sign "$IDENTITY" --options runtime "${BIN_DIR}/clipster-server"
             codesign --force --sign "$IDENTITY" --options runtime "${BIN_DIR}/clipster-cli"
 
-            # Build DMG with app + server + CLI
+            # Notarize the .app (as zip) and staple it
+            ditto -c -k --keepParent "$APP" "/tmp/Clipster_${ARCH}.zip"
+            xcrun notarytool submit "/tmp/Clipster_${ARCH}.zip" \
+              --key ~/.privatekeys/AuthKey_Z43Q26MB7Y.p8 \
+              --key-id Z43Q26MB7Y \
+              --issuer 69a6de85-e83f-47e3-e053-5b8c7c11a4d1 \
+              --wait --timeout 10m
+            xcrun stapler staple "$APP"
+
+            # Build DMG with stapled app + signed CLI binaries
             STAGE=$(mktemp -d)
             cp -R "$APP" "$STAGE/"
             cp "${BIN_DIR}/clipster-server" "$STAGE/"
@@ -145,17 +152,13 @@ jobs:
             hdiutil create -srcfolder "$STAGE" -volname "Clipster" -format UDZO -o "$DMG"
             rm -rf "$STAGE"
 
-            # Sign the DMG
+            # Sign + notarize + staple the DMG
             codesign --force --sign "$IDENTITY" "$DMG"
-
-            # Notarize
             xcrun notarytool submit "$DMG" \
               --key ~/.privatekeys/AuthKey_Z43Q26MB7Y.p8 \
               --key-id Z43Q26MB7Y \
               --issuer 69a6de85-e83f-47e3-e053-5b8c7c11a4d1 \
               --wait --timeout 10m
-
-            # Staple
             xcrun stapler staple "$DMG"
           done
 
