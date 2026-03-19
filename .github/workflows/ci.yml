@@ -131,6 +131,10 @@ jobs:
             codesign --force --deep --sign "$IDENTITY" --options runtime \
               --entitlements "$ENTITLEMENTS" "$APP"
 
+            # Sign the CLI binaries too
+            codesign --force --sign "$IDENTITY" --options runtime "${BIN_DIR}/clipster-server"
+            codesign --force --sign "$IDENTITY" --options runtime "${BIN_DIR}/clipster-cli"
+
             # Build DMG with app + server + CLI
             STAGE=$(mktemp -d)
             cp -R "$APP" "$STAGE/"
