@@ -34,8 +34,11 @@ jobs:
           key: cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-test-
 
-      - name: Run tests
+      - name: Run Rust tests
         run: cargo test --workspace --exclude clipster-app
+
+      - name: Run web tests
+        run: cd web && npm ci && npm run typecheck && npm test
 
   # ── Self-hosted: CLI cross-compile + macOS DMGs ──────
 
