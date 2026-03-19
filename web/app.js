@@ -91,9 +91,13 @@ async function apiPatch(path) {
   return resp.json();
 }
 
+let promptingKey = false;
 function promptApiKey() {
+  if (promptingKey) return;
+  promptingKey = true;
   const key = prompt('Enter API key:');
-  if (key !== null) {
+  promptingKey = false;
+  if (key !== null && key.trim()) {
     WEB_API_KEY = key.trim();
     localStorage.setItem('clipster_api_key', WEB_API_KEY);
     lastClipIds = '';
@@ -194,8 +198,10 @@ async function loadClips() {
     updateCount(clips.length);
     render(clips);
   } catch (e) {
-    console.error('Failed to load clips:', e);
-    showToast('Failed to load clips');
+    if (e.message !== 'unauthorized') {
+      console.error('Failed to load clips:', e);
+      showToast('Failed to load clips');
+    }
   }
 }
 
