@@ -2,3 +2,5 @@
 *.db
 *.db-journal
 .env
+clipster-app/gen/
+node_modules/

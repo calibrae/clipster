@@ -162,6 +162,7 @@ All endpoints under `/api/v1`. External clients auth via `Authorization: Bearer 
 | `GET` | `/clips/:id` | Get clip metadata |
 | `GET` | `/clips/:id/content` | Get the actual content |
 | `DELETE` | `/clips/:id` | Soft-delete (we don't do hard deletes, we're not monsters) |
+| `DELETE` | `/clips` | Wipe everything (`?keep_favorites=true` to spare starred clips) |
 | `PATCH` | `/clips/:id/favorite` | Star it for later |
 | `GET` | `/health` | Is the server alive? (no auth needed) |
 
@@ -223,7 +224,7 @@ cd web && npm test                               # 35 TypeScript tests
 
 | File | Who uses it | What's in it |
 |------|------------|-------------|
-| `server.toml` | Server | `bind`, `db_path`, `api_key`, `tls` |
+| `server.toml` | Server | `bind`, `db_path`, `api_key`, `tls`, `retention_days` |
 | `app.toml` | Desktop app | `server_url`, `api_key`, `insecure`, `sync_enabled` |
 | `client.toml` | Agent / CLI | `server_url`, `api_key`, `device_name` |
 

@@ -16,6 +16,9 @@ pub struct ServerConfig {
     pub tls_cert: Option<String>,
     #[serde(default)]
     pub tls_key: Option<String>,
+    /// Auto-delete non-favorite clips older than this many days. 0 = keep forever.
+    #[serde(default)]
+    pub retention_days: u32,
 }
 
 impl Default for ServerConfig {
@@ -28,6 +31,7 @@ impl Default for ServerConfig {
             tls: false,
             tls_cert: None,
             tls_key: None,
+            retention_days: 0,
         }
     }
 }

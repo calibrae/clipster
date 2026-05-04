@@ -60,6 +60,7 @@ pub fn setup(bind: Option<&str>, tls: bool) -> Result<()> {
         tls,
         tls_cert: None,
         tls_key: None,
+        retention_days: 0,
     };
 
     // Write config
@@ -108,6 +109,9 @@ pub fn setup(bind: Option<&str>, tls: bool) -> Result<()> {
     println!("Data:    {}", data.display());
     println!("Bind:    {bind_addr}");
     println!("TLS:     {tls}");
+    println!();
+    println!("Retention is disabled by default. To auto-delete non-favorite clips,");
+    println!("add `retention_days = N` to {} (server restart required).", config_path.display());
     println!();
     println!("--- Client Configuration ---");
     println!();

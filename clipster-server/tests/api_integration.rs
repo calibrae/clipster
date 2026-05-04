@@ -299,6 +299,90 @@ async fn pagination_limit_offset() {
 }
 
 #[tokio::test]
+async fn delete_all_clips_removes_everything() {
+    let base = spawn_test_server().await;
+    let c = client();
+
+    c.post(format!("{base}/api/v1/clips"))
+        .json(&create_clip_body("one", "dev"))
+        .send()
+        .await
+        .unwrap();
+    c.post(format!("{base}/api/v1/clips"))
+        .json(&create_clip_body("two", "dev"))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = c
+        .delete(format!("{base}/api/v1/clips"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["deleted"], 2);
+
+    let list: Value = c
+        .get(format!("{base}/api/v1/clips"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list["total_count"], 0);
+}
+
+#[tokio::test]
+async fn delete_all_clips_with_keep_favorites_preserves_starred() {
+    let base = spawn_test_server().await;
+    let c = client();
+
+    let plain: Value = c
+        .post(format!("{base}/api/v1/clips"))
+        .json(&create_clip_body("plain", "dev"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let starred: Value = c
+        .post(format!("{base}/api/v1/clips"))
+        .json(&create_clip_body("starred", "dev"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let starred_id = starred["id"].as_str().unwrap();
+
+    c.patch(format!("{base}/api/v1/clips/{starred_id}/favorite"))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = c
+        .delete(format!("{base}/api/v1/clips?keep_favorites=true"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["deleted"], 1);
+
+    // Plain gone, starred remains.
+    let plain_id = plain["id"].as_str().unwrap();
+    let r = c.get(format!("{base}/api/v1/clips/{plain_id}")).send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    let r = c.get(format!("{base}/api/v1/clips/{starred_id}")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+}
+
+#[tokio::test]
 async fn get_clip_content_returns_plain_text() {
     let base = spawn_test_server().await;
     let c = client();

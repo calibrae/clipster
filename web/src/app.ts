@@ -18,6 +18,11 @@ const clipCountEl = document.getElementById('clip-count')!;
 const deleteModal = document.getElementById('delete-modal')!;
 const modalCancel = document.getElementById('modal-cancel')!;
 const modalConfirm = document.getElementById('modal-confirm')!;
+const clearAllBtn = document.getElementById('clear-all-btn')!;
+const clearAllModal = document.getElementById('clear-all-modal')!;
+const clearAllCancel = document.getElementById('clear-all-cancel')!;
+const clearAllConfirm = document.getElementById('clear-all-confirm')!;
+const clearAllKeepFav = document.getElementById('clear-all-keep-fav') as HTMLInputElement;
 
 initToast(document.getElementById('toast-area')!);
 
@@ -48,6 +53,10 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!deleteModal.hidden) {
       closeModal();
+      return;
+    }
+    if (!clearAllModal.hidden) {
+      clearAllModal.hidden = true;
       return;
     }
     if (searchEl.value) {
@@ -129,12 +138,6 @@ function render(clips: Clip[]): void {
     el.dataset.type = clip.content_type;
     el.style.animationDelay = `${i * 0.03}s`;
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'clip-delete';
-    deleteBtn.title = 'Delete clip';
-    deleteBtn.innerHTML = '&times;';
-    el.appendChild(deleteBtn);
-
     const headerDiv = document.createElement('div');
     headerDiv.className = 'clip-header';
 
@@ -159,8 +162,15 @@ function render(clips: Clip[]): void {
 
     const favSpan = document.createElement('span');
     favSpan.className = `fav${clip.is_favorite ? ' is-fav' : ''}`;
+    favSpan.title = clip.is_favorite ? 'Unfavorite' : 'Favorite';
     favSpan.innerHTML = clip.is_favorite ? '&#9733;' : '&#9734;';
     headerDiv.appendChild(favSpan);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'clip-delete';
+    deleteBtn.title = 'Delete clip';
+    deleteBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+    headerDiv.appendChild(deleteBtn);
 
     el.appendChild(headerDiv);
 
@@ -282,6 +292,35 @@ modalConfirm.addEventListener('click', async () => {
   } catch (e) {
     console.error('Delete failed:', e);
     showToast('Failed to delete clip');
+  }
+});
+
+// ── Clear all ────────────────────────────────────────
+
+clearAllBtn.hidden = false;
+
+clearAllBtn.addEventListener('click', () => {
+  clearAllKeepFav.checked = true;
+  clearAllModal.hidden = false;
+});
+
+clearAllCancel.addEventListener('click', () => { clearAllModal.hidden = true; });
+
+clearAllModal.addEventListener('click', (e) => {
+  if (e.target === clearAllModal) clearAllModal.hidden = true;
+});
+
+clearAllConfirm.addEventListener('click', async () => {
+  const keep = clearAllKeepFav.checked;
+  clearAllModal.hidden = true;
+  try {
+    const res = await api.delete(`/clips${keep ? '?keep_favorites=true' : ''}`);
+    lastClipIds = '';
+    await loadClips();
+    showToast(typeof res === 'object' ? 'All clips deleted' : 'All clips deleted');
+  } catch (e) {
+    console.error('Clear all failed:', e);
+    showToast('Failed to clear clips');
   }
 });
 

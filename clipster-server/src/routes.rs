@@ -37,6 +37,7 @@ pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/api/v1/clips", post(create_clip))
         .route("/api/v1/clips", get(list_clips))
+        .route("/api/v1/clips", delete(delete_all_clips))
         .route("/api/v1/clips/{id}", get(get_clip))
         .route("/api/v1/clips/{id}", delete(delete_clip))
         .route("/api/v1/clips/{id}/content", get(get_clip_content))
@@ -292,6 +293,21 @@ async fn delete_clip(
     state.db.soft_delete(&id)?;
     tracing::info!(id = %id, "deleted clip");
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(serde::Deserialize, Default)]
+struct DeleteAllQuery {
+    #[serde(default)]
+    keep_favorites: bool,
+}
+
+async fn delete_all_clips(
+    State(state): State<AppState>,
+    Query(q): Query<DeleteAllQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let count = state.db.delete_all(q.keep_favorites)?;
+    tracing::info!(count, keep_favorites = q.keep_favorites, "deleted all clips");
+    Ok(Json(serde_json::json!({ "deleted": count })))
 }
 
 async fn toggle_favorite(

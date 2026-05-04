@@ -1,4 +1,4 @@
-use clipster_server::{db, routes, setup, state, tls};
+use clipster_server::{db, retention, routes, setup, state, tls};
 
 use clap::Parser;
 use clipster_common::config::ServerConfig;
@@ -87,7 +87,14 @@ async fn main() -> anyhow::Result<()> {
     let db = db::Database::open(&db_path)?;
     db.migrate()?;
 
-    let app_state = state::AppState::new(db, image_dir, config.api_key.clone());
+    let app_state = state::AppState::new(db, image_dir.clone(), config.api_key.clone());
+
+    retention::spawn(
+        app_state.db.clone(),
+        std::path::PathBuf::from(&image_dir),
+        config.retention_days,
+    );
+
     let app = routes::router(app_state);
 
     let listener = tokio::net::TcpListener::bind(&bind).await?;

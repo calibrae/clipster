@@ -175,6 +175,72 @@ impl Database {
         Ok(())
     }
 
+    /// Soft-delete all non-favorite clips (or all clips if `keep_favorites` is false).
+    /// Returns the number of clips affected.
+    pub fn delete_all(&self, keep_favorites: bool) -> Result<u64, ClipsterError> {
+        let conn = self.conn.lock().unwrap();
+        let sql = if keep_favorites {
+            "UPDATE clips SET is_deleted = 1 WHERE is_deleted = 0 AND is_favorite = 0"
+        } else {
+            "UPDATE clips SET is_deleted = 1 WHERE is_deleted = 0"
+        };
+        let affected = conn
+            .execute(sql, [])
+            .map_err(|e| ClipsterError::Database(e.to_string()))?;
+        Ok(affected as u64)
+    }
+
+    /// Hard-delete clips older than `older_than` (favorites always kept).
+    /// Returns (clips_deleted, image_hashes_to_purge).
+    pub fn purge_older_than(
+        &self,
+        older_than: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(u64, Vec<String>), ClipsterError> {
+        let conn = self.conn.lock().unwrap();
+        let cutoff = older_than.to_rfc3339();
+
+        // Collect image hashes that will become unreferenced.
+        let mut stmt = conn
+            .prepare(
+                "SELECT image_hash FROM clips
+                 WHERE is_favorite = 0
+                   AND created_at < ?1
+                   AND content_type = 'image'
+                   AND image_hash IS NOT NULL",
+            )
+            .map_err(|e| ClipsterError::Database(e.to_string()))?;
+        let hashes: Vec<String> = stmt
+            .query_map(params![cutoff], |row| row.get::<_, String>(0))
+            .map_err(|e| ClipsterError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+        drop(stmt);
+
+        let affected = conn
+            .execute(
+                "DELETE FROM clips WHERE is_favorite = 0 AND created_at < ?1",
+                params![cutoff],
+            )
+            .map_err(|e| ClipsterError::Database(e.to_string()))?;
+
+        // Only return hashes that no surviving row still references.
+        let mut orphans = Vec::new();
+        for h in hashes {
+            let still_used: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM clips WHERE image_hash = ?1",
+                    params![h],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            if still_used == 0 {
+                orphans.push(h);
+            }
+        }
+
+        Ok((affected as u64, orphans))
+    }
+
     pub fn toggle_favorite(&self, id: &Uuid) -> Result<bool, ClipsterError> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -472,5 +538,115 @@ mod tests {
         let other_hash = content_hash(b"completely different");
         let is_dup = db.has_recent_duplicate(&other_hash, 60).unwrap();
         assert!(!is_dup);
+    }
+
+    #[test]
+    fn delete_all_keep_favorites_keeps_starred_clips() {
+        let db = setup_db();
+        let plain = make_test_clip("plain");
+        db.insert_clip(&plain).unwrap();
+        let mut starred = make_test_clip("starred");
+        starred.is_favorite = true;
+        db.insert_clip(&starred).unwrap();
+
+        let count = db.delete_all(true).unwrap();
+        assert_eq!(count, 1);
+
+        // plain is gone, starred survives
+        assert!(db.get_clip(&plain.id).is_err());
+        assert!(db.get_clip(&starred.id).is_ok());
+    }
+
+    #[test]
+    fn delete_all_without_keep_favorites_removes_everything() {
+        let db = setup_db();
+        let plain = make_test_clip("plain");
+        db.insert_clip(&plain).unwrap();
+        let mut starred = make_test_clip("starred");
+        starred.is_favorite = true;
+        db.insert_clip(&starred).unwrap();
+
+        let count = db.delete_all(false).unwrap();
+        assert_eq!(count, 2);
+
+        assert!(db.get_clip(&plain.id).is_err());
+        assert!(db.get_clip(&starred.id).is_err());
+    }
+
+    #[test]
+    fn delete_all_returns_zero_when_nothing_to_delete() {
+        let db = setup_db();
+        assert_eq!(db.delete_all(true).unwrap(), 0);
+        assert_eq!(db.delete_all(false).unwrap(), 0);
+    }
+
+    #[test]
+    fn purge_older_than_removes_old_non_favorites_only() {
+        let db = setup_db();
+
+        let mut old = make_test_clip("old");
+        old.created_at = Utc::now() - chrono::Duration::days(40);
+        db.insert_clip(&old).unwrap();
+
+        let mut old_fav = make_test_clip("old fav");
+        old_fav.is_favorite = true;
+        old_fav.created_at = Utc::now() - chrono::Duration::days(40);
+        db.insert_clip(&old_fav).unwrap();
+
+        let recent = make_test_clip("recent");
+        db.insert_clip(&recent).unwrap();
+
+        let cutoff = Utc::now() - chrono::Duration::days(30);
+        let (deleted, orphans) = db.purge_older_than(cutoff).unwrap();
+        assert_eq!(deleted, 1);
+        assert_eq!(orphans.len(), 0); // text clips, no images
+
+        assert!(db.get_clip(&old.id).is_err());
+        assert!(db.get_clip(&old_fav.id).is_ok());
+        assert!(db.get_clip(&recent.id).is_ok());
+    }
+
+    #[test]
+    fn purge_older_than_returns_orphan_image_hashes() {
+        let db = setup_db();
+
+        let mut img = make_test_clip("img placeholder");
+        img.content_type = ClipContentType::Image;
+        img.text_content = None;
+        img.image_hash = Some("deadbeef".to_string());
+        img.image_mime = Some("image/png".to_string());
+        img.created_at = Utc::now() - chrono::Duration::days(40);
+        db.insert_clip(&img).unwrap();
+
+        let cutoff = Utc::now() - chrono::Duration::days(30);
+        let (deleted, orphans) = db.purge_older_than(cutoff).unwrap();
+        assert_eq!(deleted, 1);
+        assert_eq!(orphans, vec!["deadbeef".to_string()]);
+    }
+
+    #[test]
+    fn purge_older_than_does_not_orphan_hash_still_referenced() {
+        let db = setup_db();
+
+        // Two image clips sharing the same hash; one is old, one is recent.
+        let mut old_img = make_test_clip("old");
+        old_img.content_type = ClipContentType::Image;
+        old_img.text_content = None;
+        old_img.image_hash = Some("sharedhash".to_string());
+        old_img.image_mime = Some("image/png".to_string());
+        old_img.created_at = Utc::now() - chrono::Duration::days(40);
+        db.insert_clip(&old_img).unwrap();
+
+        let mut new_img = make_test_clip("new");
+        new_img.content_type = ClipContentType::Image;
+        new_img.text_content = None;
+        new_img.image_hash = Some("sharedhash".to_string());
+        new_img.image_mime = Some("image/png".to_string());
+        db.insert_clip(&new_img).unwrap();
+
+        let cutoff = Utc::now() - chrono::Duration::days(30);
+        let (deleted, orphans) = db.purge_older_than(cutoff).unwrap();
+        assert_eq!(deleted, 1);
+        assert_eq!(orphans.len(), 0); // hash still referenced by the recent clip
     }
 }

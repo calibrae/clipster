@@ -219,24 +219,22 @@ h1 {
 .fav.is-fav { color: #facc15; }
 
 .clip-delete {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
   width: 22px;
   height: 22px;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: #52525b;
-  font-size: 0.85rem;
-  line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   opacity: 0;
   transition: opacity 0.15s, background 0.15s, color 0.15s;
 }
+
+.clip-delete svg { width: 14px; height: 14px; }
 
 .clip:hover .clip-delete { opacity: 1; }
 
@@ -403,7 +401,7 @@ h1 {
 
 /* ── Settings ────────────────────────────────────────── */
 
-.settings-btn {
+.header-btn {
   background: none;
   border: none;
   cursor: pointer;
@@ -414,8 +412,9 @@ h1 {
   align-items: center;
 }
 
-.settings-btn svg { width: 18px; height: 18px; }
-.settings-btn:hover { color: #a78bfa; }
+.header-btn svg { width: 18px; height: 18px; }
+.header-btn:hover { color: #a78bfa; }
+#clear-all-btn:hover { color: #ef4444; }
 
 .settings-panel { max-width: 400px; }
 
