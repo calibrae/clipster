@@ -1,8 +1,15 @@
-use clipster_server::{db, retention, routes, setup, state, tls};
+use clipster_server::{retention, routes, setup, state};
 
 use clap::Parser;
 use clipster_common::config::ServerConfig;
+use clipster_core::ClipsterCore;
+use clipster_core::db::Database;
+use clipster_core::discovery::{Announcer, Browser};
+use clipster_core::identity::Identity;
+use clipster_core::peer::server::router as peer_router;
+use clipster_core::sync::SyncEngine;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -40,6 +47,21 @@ enum Command {
     Uninstall,
     /// Check daemon status
     Status,
+    /// Manage peer trust
+    Peers {
+        #[command(subcommand)]
+        action: PeersAction,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum PeersAction {
+    /// List all known peers
+    List,
+    /// Trust a peer by its device_id (SHA-256 fingerprint hex)
+    Trust { device_id: String },
+    /// Reject (block) a peer
+    Reject { device_id: String },
 }
 
 #[tokio::main]
@@ -58,6 +80,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Status => {
             return setup::status();
+        }
+        Command::Peers { action } => {
+            return peers_command(cli.config.as_deref(), action);
         }
         Command::Run => {}
     }
@@ -84,35 +109,70 @@ async fn main() -> anyhow::Result<()> {
         .clone()
         .unwrap_or_else(|| data_dir.join("clipster.db").to_string_lossy().to_string());
 
-    let db = db::Database::open(&db_path)?;
+    let db = Database::open(&db_path)?;
     db.migrate()?;
 
-    let app_state = state::AppState::new(db, image_dir.clone(), config.api_key.clone());
+    let identity = Identity::load_or_create(&data_dir, None)?;
+    let core = Arc::new(ClipsterCore::new(
+        db,
+        identity,
+        PathBuf::from(&image_dir),
+    ));
+
+    let app_state = state::AppState::new(core.clone(), config.api_key.clone());
 
     retention::spawn(
-        app_state.db.clone(),
-        std::path::PathBuf::from(&image_dir),
+        core.db.clone(),
+        PathBuf::from(&image_dir),
         config.retention_days,
     );
 
-    let app = routes::router(app_state);
+    // Start mDNS discovery + announce
+    let port: u16 = bind
+        .rsplit(':')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8743);
+    let _announcer = match Announcer::start(
+        &core.identity.device_name,
+        port,
+        &core.identity.device_id,
+        &core.identity.device_name,
+        env!("CARGO_PKG_VERSION"),
+        &["web_ui", "images"],
+    ) {
+        Ok(a) => Some(a),
+        Err(e) => {
+            tracing::warn!(error = %e, "mDNS announce failed; continuing without LAN discovery");
+            None
+        }
+    };
+    let browser = match Browser::start(core.identity.device_id.clone()) {
+        Ok(b) => Some(b),
+        Err(e) => {
+            tracing::warn!(error = %e, "mDNS browse failed; LAN peer discovery disabled");
+            None
+        }
+    };
+
+    // Sync engine
+    let sync_engine = SyncEngine::spawn(core.clone());
+    if let Some(b) = &browser {
+        sync_engine.attach_discovery(b.subscribe());
+    }
+
+    // Combine web/admin app router + peer router (peer router has its own auth)
+    let app = routes::router(app_state).merge(peer_router(core.clone()));
 
     let listener = tokio::net::TcpListener::bind(&bind).await?;
 
     if use_tls {
-        let acceptor = tls::setup(
-            &data_dir,
-            config.tls_cert.as_deref(),
-            config.tls_key.as_deref(),
-        )?;
-
-        tracing::info!("Clipster server listening on https://{bind}");
-
+        let acceptor = core.identity.tls_acceptor()?;
+        tracing::info!("Clipster server listening on https://{bind} (device {})", core.identity.device_id);
         loop {
             let (stream, _addr) = listener.accept().await?;
             let acceptor = acceptor.clone();
             let app = app.clone();
-
             tokio::spawn(async move {
                 match acceptor.accept(stream).await {
                     Ok(tls_stream) => {
@@ -134,11 +194,67 @@ async fn main() -> anyhow::Result<()> {
             });
         }
     } else {
-        tracing::info!("Clipster server listening on http://{bind}");
+        tracing::info!("Clipster server listening on http://{bind} (device {})", core.identity.device_id);
         axum::serve(listener, app).await?;
     }
 
+    // Unreachable in current control flow but keeps types tidy
+    #[allow(unreachable_code)]
     Ok(())
+}
+
+fn peers_command(config_path: Option<&std::path::Path>, action: PeersAction) -> anyhow::Result<()> {
+    let config = load_config(config_path)?;
+    let data_dir = data_dir(&config);
+    let db_path = config
+        .db_path
+        .clone()
+        .unwrap_or_else(|| data_dir.join("clipster.db").to_string_lossy().to_string());
+    let db = Database::open(&db_path)?;
+    db.migrate()?;
+
+    match action {
+        PeersAction::List => {
+            let peers = db.list_peers()?;
+            if peers.is_empty() {
+                println!("No peers known yet.");
+                return Ok(());
+            }
+            println!("{:<10} {:<24} {}", "STATUS", "NAME", "DEVICE_ID");
+            println!("{:-<80}", "");
+            for p in peers {
+                println!(
+                    "{:<10} {:<24} {}",
+                    p.trust_status.to_string(),
+                    truncate(&p.name, 24),
+                    p.device_id
+                );
+                if let Some(addr) = &p.last_addr {
+                    println!("           addr: {addr}");
+                }
+                if let Some(seen) = &p.last_seen {
+                    println!("           last seen: {}", seen.to_rfc3339());
+                }
+            }
+        }
+        PeersAction::Trust { device_id } => {
+            db.set_peer_trust(&device_id, clipster_core::db::peers::TrustStatus::Trusted)?;
+            println!("Peer {device_id} trusted");
+        }
+        PeersAction::Reject { device_id } => {
+            db.set_peer_trust(&device_id, clipster_core::db::peers::TrustStatus::Rejected)?;
+            println!("Peer {device_id} rejected");
+        }
+    }
+    Ok(())
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..max.saturating_sub(1)])
+    }
 }
 
 fn load_config(path: Option<&std::path::Path>) -> anyhow::Result<ServerConfig> {

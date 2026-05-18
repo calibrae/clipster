@@ -75,20 +75,49 @@
   <div class="modal-overlay" id="settings-modal" hidden>
     <div class="modal settings-panel">
       <p class="modal-title">Settings</p>
-      <div class="settings-form">
-        <label class="setting-label">Server URL
-          <input type="url" id="setting-server-url" class="setting-input" placeholder="http://localhost:8743">
-        </label>
-        <label class="setting-label">API Key
-          <input type="password" id="setting-api-key" class="setting-input" placeholder="clp_...">
-        </label>
-        <label class="setting-label setting-check">
-          <input type="checkbox" id="setting-insecure">
-          Accept self-signed TLS certificates
-        </label>
-      </div>
+
+      <section class="settings-section" id="identity-section" hidden>
+        <h3 class="section-title">This device</h3>
+        <div class="identity-row">
+          <span class="identity-label">Name</span>
+          <span class="identity-value" id="identity-name">—</span>
+        </div>
+        <div class="identity-row">
+          <span class="identity-label">Fingerprint</span>
+          <code class="identity-fp" id="identity-fp">—</code>
+        </div>
+      </section>
+
+      <section class="settings-section" id="peers-section" hidden>
+        <h3 class="section-title">
+          Peers
+          <button class="section-action" id="peers-refresh" title="Refresh">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14"/></svg>
+          </button>
+        </h3>
+        <div class="peers-empty" id="peers-empty" hidden>No peers discovered yet.</div>
+        <ul class="peers-list" id="peers-list"></ul>
+      </section>
+
+      <section class="settings-section" id="legacy-section">
+        <h3 class="section-title">Legacy server (optional)</h3>
+        <p class="section-hint">Used only if you still rely on a central Clipster server. Leave blank for pure LAN mesh.</p>
+        <div class="settings-form">
+          <label class="setting-label">Server URL
+            <input type="url" id="setting-server-url" class="setting-input" placeholder="https://10.0.0.2:8743">
+          </label>
+          <label class="setting-label">API Key
+            <input type="password" id="setting-api-key" class="setting-input" placeholder="clp_...">
+          </label>
+          <label class="setting-label setting-check">
+            <input type="checkbox" id="setting-insecure">
+            Accept self-signed TLS certificates
+          </label>
+        </div>
+      </section>
+
       <div class="modal-actions">
-        <button class="modal-btn modal-cancel" id="settings-cancel">Cancel</button>
+        <button class="modal-btn modal-cancel" id="settings-cancel">Close</button>
         <button class="modal-btn modal-save" id="settings-save">Save</button>
       </div>
     </div>

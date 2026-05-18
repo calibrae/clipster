@@ -127,6 +127,7 @@ async fn create_clip(
         return Err(AppError::duplicate());
     }
 
+    let now = chrono::Utc::now();
     let clip = Clip {
         id: Uuid::now_v7(),
         content_type: ClipContentType::Text,
@@ -138,7 +139,8 @@ async fn create_clip(
         source_device: req.source_device,
         source_app: req.source_app,
         byte_size: req.text_content.len() as u64,
-        created_at: chrono::Utc::now(),
+        created_at: now,
+        state_modified_at: now,
         is_favorite: false,
         is_deleted: false,
     };
@@ -217,6 +219,7 @@ async fn create_image_clip(
     let path = std::path::Path::new(&state.image_dir).join(&filename);
     tokio::fs::write(&path, &data).await?;
 
+    let now = chrono::Utc::now();
     let clip = Clip {
         id: Uuid::now_v7(),
         content_type: ClipContentType::Image,
@@ -228,7 +231,8 @@ async fn create_image_clip(
         source_device: meta.source_device,
         source_app: meta.source_app,
         byte_size: data.len() as u64,
-        created_at: chrono::Utc::now(),
+        created_at: now,
+        state_modified_at: now,
         is_favorite: false,
         is_deleted: false,
     };

@@ -4,3 +4,4 @@
 .env
 clipster-app/gen/
 node_modules/
+resume.sh

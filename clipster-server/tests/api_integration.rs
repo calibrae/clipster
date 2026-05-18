@@ -1,16 +1,20 @@
-use clipster_server::db::Database;
+use clipster_core::ClipsterCore;
+use clipster_core::db::Database;
+use clipster_core::identity::Identity;
 use clipster_server::state::AppState;
 use reqwest::Client;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 
 async fn spawn_test_server() -> String {
     let db = Database::open(":memory:").unwrap();
     db.migrate().unwrap();
     let tmp = tempfile::tempdir().unwrap();
-    let image_dir = tmp.path().to_str().unwrap().to_string();
+    let identity = Identity::load_or_create(tmp.path(), Some("test".into())).unwrap();
+    let core = Arc::new(ClipsterCore::new(db, identity, tmp.path().to_path_buf()));
 
-    let state = AppState::new(db, image_dir, None);
+    let state = AppState::new(core, None);
     let app = clipster_server::routes::router(state);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

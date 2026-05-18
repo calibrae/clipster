@@ -1,5 +1,5 @@
 [workspace]
-members = ["clipster-common", "clipster-server", "clipster-agent", "clipster-cli", "clipster-app"]
+members = ["clipster-common", "clipster-core", "clipster-server", "clipster-agent", "clipster-cli", "clipster-app"]
 resolver = "2"
 
 [profile.release]
@@ -23,3 +23,11 @@ clap = { version = "4", features = ["derive"] }
 toml = "0.8"
 sha2 = "0.10"
 directories = "6"
+anyhow = "1"
+rusqlite = { version = "0.33", features = ["bundled"] }
+rcgen = "0.13"
+rustls = "0.23"
+tokio-rustls = "0.26"
+rustls-pemfile = "2"
+mdns-sd = "0.13"
+async-trait = "0.1"

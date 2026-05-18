@@ -416,7 +416,137 @@ h1 {
 .header-btn:hover { color: #a78bfa; }
 #clear-all-btn:hover { color: #ef4444; }
 
-.settings-panel { max-width: 400px; }
+.settings-panel { max-width: 460px; max-height: 80vh; overflow-y: auto; }
+
+.settings-section {
+  border-top: 1px solid #27272a;
+  padding-top: 1rem;
+  margin-bottom: 1.25rem;
+}
+.settings-section:first-of-type { border-top: none; padding-top: 0; }
+
+.section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #71717a;
+  margin-bottom: 0.6rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-hint {
+  font-size: 0.72rem;
+  color: #52525b;
+  margin-bottom: 0.7rem;
+}
+
+.section-action {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #52525b;
+  padding: 0;
+  display: flex;
+}
+.section-action svg { width: 14px; height: 14px; }
+.section-action:hover { color: #a78bfa; }
+
+.identity-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  padding: 0.3rem 0;
+}
+.identity-label { color: #71717a; }
+.identity-value { color: #e4e4e7; font-weight: 600; }
+.identity-fp {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.68rem;
+  color: #a78bfa;
+  word-break: break-all;
+  text-align: right;
+  max-width: 60%;
+}
+
+.peers-empty {
+  color: #52525b;
+  font-size: 0.78rem;
+  font-style: italic;
+  padding: 0.5rem 0;
+}
+
+.peers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.peer {
+  background: #0d0d10;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.peer.pending { border-color: #f59e0b66; }
+
+.peer-row1 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+.peer-name { font-weight: 600; color: #e4e4e7; font-size: 0.85rem; }
+.peer-status {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-weight: 700;
+}
+.peer-status.trusted { background: #052e16; color: #34d399; }
+.peer-status.pending { background: #3b2410; color: #fbbf24; }
+.peer-status.rejected { background: #2c1212; color: #f87171; }
+
+.peer-fp {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.65rem;
+  color: #52525b;
+  word-break: break-all;
+}
+
+.peer-meta { font-size: 0.7rem; color: #71717a; }
+
+.peer-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+.peer-btn {
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  border: none;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.peer-btn.trust { background: #166534; color: #ecfccb; }
+.peer-btn.trust:hover { background: #15803d; }
+.peer-btn.revoke { background: #7f1d1d; color: #fef2f2; }
+.peer-btn.revoke:hover { background: #991b1b; }
+
 
 .settings-form {
   display: flex;

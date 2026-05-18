@@ -1,4 +1,4 @@
-import type { Clip, ClipListResponse, AppSettings } from './types';
+import type { Clip, ClipListResponse, AppSettings, PeerRecord, IdentityInfo } from './types';
 import { createBrowserApi, createTauriApi, type ApiClient } from './api';
 import { relativeTime } from './time';
 import { initToast, showToast } from './toast';
@@ -334,8 +334,108 @@ const settingServerUrl = document.getElementById('setting-server-url') as HTMLIn
 const settingApiKey = document.getElementById('setting-api-key') as HTMLInputElement | null;
 const settingInsecure = document.getElementById('setting-insecure') as HTMLInputElement | null;
 
+const identitySection = document.getElementById('identity-section');
+const identityName = document.getElementById('identity-name');
+const identityFp = document.getElementById('identity-fp');
+const peersSection = document.getElementById('peers-section');
+const peersList = document.getElementById('peers-list');
+const peersEmpty = document.getElementById('peers-empty');
+const peersRefresh = document.getElementById('peers-refresh');
+
+async function refreshPeers(): Promise<void> {
+  if (!IS_TAURI || !invoke || !peersList) return;
+  try {
+    const peers = (await invoke('list_peers')) as PeerRecord[];
+    if (peers.length === 0) {
+      peersList.innerHTML = '';
+      if (peersEmpty) peersEmpty.hidden = false;
+      return;
+    }
+    if (peersEmpty) peersEmpty.hidden = true;
+    peersList.innerHTML = '';
+    // Sort: pending first, then trusted, then rejected
+    const order: Record<string, number> = { pending: 0, trusted: 1, rejected: 2 };
+    peers.sort((a, b) => (order[a.trust_status] ?? 3) - (order[b.trust_status] ?? 3));
+    for (const p of peers) {
+      const li = document.createElement('li');
+      li.className = `peer ${p.trust_status === 'pending' ? 'pending' : ''}`;
+
+      const row1 = document.createElement('div');
+      row1.className = 'peer-row1';
+      const name = document.createElement('span');
+      name.className = 'peer-name';
+      name.textContent = p.name || '(unnamed)';
+      const status = document.createElement('span');
+      status.className = `peer-status ${p.trust_status}`;
+      status.textContent = p.trust_status;
+      row1.appendChild(name);
+      row1.appendChild(status);
+      li.appendChild(row1);
+
+      const fp = document.createElement('div');
+      fp.className = 'peer-fp';
+      fp.textContent = p.device_id.match(/.{1,8}/g)?.join(' ') ?? p.device_id;
+      li.appendChild(fp);
+
+      if (p.last_addr || p.last_seen) {
+        const meta = document.createElement('div');
+        meta.className = 'peer-meta';
+        const parts: string[] = [];
+        if (p.last_addr) parts.push(p.last_addr);
+        if (p.last_seen) {
+          const seen = new Date(p.last_seen);
+          parts.push(`seen ${seen.toLocaleString()}`);
+        }
+        meta.textContent = parts.join(' · ');
+        li.appendChild(meta);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'peer-actions';
+      if (p.trust_status === 'pending' || p.trust_status === 'rejected') {
+        const btn = document.createElement('button');
+        btn.className = 'peer-btn trust';
+        btn.textContent = 'Trust';
+        btn.onclick = async () => {
+          try { await invoke!('trust_peer', { deviceId: p.device_id }); refreshPeers(); }
+          catch (e) { console.error(e); showToast('Trust failed'); }
+        };
+        actions.appendChild(btn);
+      }
+      if (p.trust_status !== 'rejected') {
+        const btn = document.createElement('button');
+        btn.className = 'peer-btn revoke';
+        btn.textContent = p.trust_status === 'trusted' ? 'Revoke' : 'Reject';
+        btn.onclick = async () => {
+          try { await invoke!('revoke_peer', { deviceId: p.device_id }); refreshPeers(); }
+          catch (e) { console.error(e); showToast('Revoke failed'); }
+        };
+        actions.appendChild(btn);
+      }
+      if (actions.children.length > 0) li.appendChild(actions);
+
+      peersList.appendChild(li);
+    }
+  } catch (e) {
+    console.warn('Failed to list peers:', e);
+  }
+}
+
+async function loadIdentity(): Promise<void> {
+  if (!IS_TAURI || !invoke || !identityName || !identityFp) return;
+  try {
+    const id = (await invoke('get_identity')) as IdentityInfo;
+    identityName.textContent = id.device_name;
+    identityFp.textContent = id.device_id.match(/.{1,8}/g)?.join(' ') ?? id.device_id;
+  } catch (e) {
+    console.warn('Failed to load identity:', e);
+  }
+}
+
 if (IS_TAURI && invoke && settingsBtn && settingsModal && settingsCancel && settingsSave) {
   settingsBtn.hidden = false;
+  if (identitySection) identitySection.hidden = false;
+  if (peersSection) peersSection.hidden = false;
 
   settingsBtn.addEventListener('click', async () => {
     try {
@@ -346,8 +446,12 @@ if (IS_TAURI && invoke && settingsBtn && settingsModal && settingsCancel && sett
     } catch (e) {
       console.warn('Failed to load settings:', e);
     }
+    loadIdentity();
+    refreshPeers();
     settingsModal!.hidden = false;
   });
+
+  if (peersRefresh) peersRefresh.addEventListener('click', refreshPeers);
 
   settingsCancel.addEventListener('click', () => { settingsModal!.hidden = true; });
 
@@ -372,6 +476,20 @@ if (IS_TAURI && invoke && settingsBtn && settingsModal && settingsCancel && sett
       showToast('Failed to save settings');
     }
   });
+
+  // Listen for pending-peer events from the Tauri backend
+  type TauriEventApi = {
+    event: { listen<T = unknown>(event: string, handler: (event: { payload: T }) => void): Promise<() => void> };
+  };
+  const tauriGlobal = (window as unknown as { __TAURI__?: TauriEventApi }).__TAURI__;
+  if (tauriGlobal?.event) {
+    tauriGlobal.event
+      .listen<{ device_id: string; name: string; addr: string }>('peer-pending', (event) => {
+        showToast(`New peer: ${event.payload.name} — open Settings to trust`);
+        refreshPeers();
+      })
+      .catch((e) => console.warn('peer-pending subscribe failed:', e));
+  }
 }
 
 // ── Init ─────────────────────────────────────────────

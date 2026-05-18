@@ -1,145 +1,130 @@
-use clipster_common::models::{CreateTextClipRequest, content_hash};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+//! Clipboard watcher — polls the system clipboard and inserts new clips
+//! into the local core DB.
+
+use crate::core;
+use chrono::Utc;
+use clipster_common::models::{Clip, ClipContentType, content_hash};
 use std::time::Duration;
+use uuid::Uuid;
 
-use crate::{current_settings, build_http_client};
+pub async fn run_watch_loop(core: std::sync::Arc<clipster_core::ClipsterCore>) {
+    tracing::info!("clipboard watcher started");
 
-/// Main sync loop — watches clipboard and pushes changes to server.
-/// Restarts when `restart_flag` is set (e.g. after settings change).
-pub async fn run_sync_loop(restart_flag: Arc<AtomicBool>) {
+    let mut clipboard = match arboard::Clipboard::new() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to open clipboard, watcher exiting");
+            return;
+        }
+    };
+
+    let device_name = core.identity.device_name.clone();
+    let mut last_text_hash: Option<String> = None;
+    let mut last_image_hash: Option<String> = None;
+
     loop {
-        let settings = current_settings();
-
-        if !settings.sync_enabled || settings.server_url.is_empty() {
+        if !crate::settings::current().sync_enabled {
             tokio::time::sleep(Duration::from_secs(2)).await;
-            if restart_flag.swap(false, Ordering::Relaxed) {
-                continue;
-            }
             continue;
         }
 
-        tracing::info!(server = %settings.server_url, "clipboard sync started");
-
-        let client = build_http_client(&settings);
-        let base_url = settings.server_url.trim_end_matches('/').to_string();
-        let api_key = settings.api_key.clone();
-        let device_name = hostname::get()
-            .ok()
-            .and_then(|h| h.into_string().ok())
-            .unwrap_or_else(|| "unknown".to_string());
-
-        let mut clipboard = match arboard::Clipboard::new() {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!(error = %e, "failed to open clipboard");
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                continue;
-            }
-        };
-
-        let mut last_text_hash: Option<String> = None;
-        let mut last_image_hash: Option<String> = None;
-
-        loop {
-            // Check if settings changed — break inner loop to restart
-            if restart_flag.swap(false, Ordering::Relaxed) {
-                tracing::info!("settings changed, restarting sync");
-                break;
-            }
-
-            // Check text
-            if let Ok(text) = clipboard.get_text() {
-                if !text.is_empty() {
-                    let hash = content_hash(text.as_bytes());
-                    if last_text_hash.as_ref() != Some(&hash) {
-                        last_text_hash = Some(hash);
-
-                        let req = CreateTextClipRequest {
-                            text_content: text,
-                            source_device: device_name.clone(),
-                            source_app: None,
-                        };
-
-                        let url = format!("{base_url}/api/v1/clips");
-                        let mut builder = client.post(&url).json(&req);
-                        if !api_key.is_empty() {
-                            builder = builder.bearer_auth(&api_key);
-                        }
-
-                        match builder.send().await {
-                            Ok(resp) if resp.status() == reqwest::StatusCode::CONFLICT => {
-                                tracing::debug!("duplicate clip, skipping");
-                            }
-                            Ok(resp) if resp.status().is_success() => {
-                                tracing::debug!("text clip synced");
-                            }
-                            Ok(resp) => {
-                                tracing::warn!(status = %resp.status(), "failed to push text clip");
-                            }
-                            Err(e) => {
-                                tracing::warn!(error = %e, "failed to push text clip");
-                            }
-                        }
+        if let Ok(text) = clipboard.get_text() {
+            if !text.is_empty() {
+                let hash = content_hash(text.as_bytes());
+                if last_text_hash.as_ref() != Some(&hash) {
+                    last_text_hash = Some(hash.clone());
+                    if let Err(e) = insert_text_clip(&core, text, &device_name).await {
+                        tracing::warn!(error = %e, "failed to insert text clip");
                     }
                 }
             }
-
-            // Check image
-            if let Ok(img) = clipboard.get_image() {
-                let raw = img.bytes.as_ref();
-                let hash = content_hash(raw);
-                if last_image_hash.as_ref() != Some(&hash) {
-                    last_image_hash = Some(hash);
-
-                    match encode_rgba_to_png(raw, img.width, img.height) {
-                        Ok(png_data) => {
-                            let metadata = serde_json::json!({
-                                "source_device": device_name,
-                                "image_mime": "image/png",
-                            });
-
-                            let form = reqwest::multipart::Form::new()
-                                .text("metadata", metadata.to_string())
-                                .part(
-                                    "image",
-                                    reqwest::multipart::Part::bytes(png_data)
-                                        .file_name("clipboard.png")
-                                        .mime_str("image/png")
-                                        .unwrap(),
-                                );
-
-                            let url = format!("{base_url}/api/v1/clips");
-                            let mut builder = client.post(&url).multipart(form);
-                            if !api_key.is_empty() {
-                                builder = builder.bearer_auth(&api_key);
-                            }
-
-                            match builder.send().await {
-                                Ok(resp) if resp.status() == reqwest::StatusCode::CONFLICT => {
-                                    tracing::debug!("duplicate image, skipping");
-                                }
-                                Ok(resp) if resp.status().is_success() => {
-                                    tracing::debug!("image clip synced");
-                                }
-                                Ok(resp) => {
-                                    tracing::warn!(status = %resp.status(), "failed to push image clip");
-                                }
-                                Err(e) => {
-                                    tracing::warn!(error = %e, "failed to push image clip");
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "failed to encode image");
-                        }
-                    }
-                }
-            }
-
-            tokio::time::sleep(Duration::from_millis(500)).await;
         }
+
+        if let Ok(img) = clipboard.get_image() {
+            let raw = img.bytes.as_ref();
+            let hash = content_hash(raw);
+            if last_image_hash.as_ref() != Some(&hash) {
+                last_image_hash = Some(hash.clone());
+                if let Err(e) =
+                    insert_image_clip(&core, raw, img.width, img.height, &device_name).await
+                {
+                    tracing::warn!(error = %e, "failed to insert image clip");
+                }
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
+}
+
+async fn insert_text_clip(
+    core: &clipster_core::ClipsterCore,
+    text: String,
+    device_name: &str,
+) -> anyhow::Result<()> {
+    let hash = content_hash(text.as_bytes());
+    if core.db.has_recent_duplicate(&hash, 5)? {
+        return Ok(());
+    }
+    let now = Utc::now();
+    let clip = Clip {
+        id: Uuid::now_v7(),
+        content_type: ClipContentType::Text,
+        text_content: Some(text.clone()),
+        image_hash: None,
+        image_mime: None,
+        file_ref_path: None,
+        content_hash: hash,
+        source_device: device_name.to_string(),
+        source_app: None,
+        byte_size: text.len() as u64,
+        created_at: now,
+        state_modified_at: now,
+        is_favorite: false,
+        is_deleted: false,
+    };
+    core.db.insert_clip(&clip)?;
+    tracing::debug!(id = %clip.id, "captured text clip");
+    Ok(())
+}
+
+async fn insert_image_clip(
+    core: &clipster_core::ClipsterCore,
+    rgba: &[u8],
+    width: usize,
+    height: usize,
+    device_name: &str,
+) -> anyhow::Result<()> {
+    let png_data = encode_rgba_to_png(rgba, width, height)?;
+    let hash = content_hash(&png_data);
+    if core.db.has_recent_duplicate(&hash, 5)? {
+        return Ok(());
+    }
+
+    let path = core.image_dir.join(format!("{hash}.png"));
+    tokio::fs::create_dir_all(&core.image_dir).await.ok();
+    tokio::fs::write(&path, &png_data).await?;
+
+    let now = Utc::now();
+    let clip = Clip {
+        id: Uuid::now_v7(),
+        content_type: ClipContentType::Image,
+        text_content: None,
+        image_hash: Some(hash.clone()),
+        image_mime: Some("image/png".into()),
+        file_ref_path: None,
+        content_hash: hash,
+        source_device: device_name.to_string(),
+        source_app: None,
+        byte_size: png_data.len() as u64,
+        created_at: now,
+        state_modified_at: now,
+        is_favorite: false,
+        is_deleted: false,
+    };
+    core.db.insert_clip(&clip)?;
+    tracing::debug!(id = %clip.id, bytes = png_data.len(), "captured image clip");
+    Ok(())
 }
 
 fn encode_rgba_to_png(rgba: &[u8], width: usize, height: usize) -> anyhow::Result<Vec<u8>> {
@@ -152,4 +137,11 @@ fn encode_rgba_to_png(rgba: &[u8], width: usize, height: usize) -> anyhow::Resul
     writer.write_image_data(rgba)?;
     writer.finish()?;
     Ok(buf.into_inner())
+}
+
+// Silence unused-import warnings: `core()` helper is kept for parity with the
+// rest of the app where callers can fetch the core handle without a borrow.
+#[allow(dead_code)]
+fn _ensure_core_helper() {
+    let _ = core();
 }

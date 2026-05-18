@@ -1,16 +1,16 @@
 [package]
 name = "clipster-agent"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
 clipster-common = { path = "../clipster-common" }
+clipster-core = { path = "../clipster-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 tokio = { workspace = true }
-reqwest = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 clap = { workspace = true }
@@ -20,3 +20,8 @@ directories = { workspace = true }
 arboard = { version = "3", features = ["image-data"] }
 anyhow = "1"
 png = "0.17"
+rustls = "0.23"
+tokio-rustls = "0.26"
+hyper = { version = "1", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
+axum = "0.8"

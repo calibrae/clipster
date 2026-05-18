@@ -51,6 +51,10 @@ pub struct Clip {
     pub source_app: Option<String>,
     pub byte_size: u64,
     pub created_at: DateTime<Utc>,
+    /// Last time the mutable state (`is_favorite`, `is_deleted`) was modified.
+    /// Equals `created_at` on insert. Used for LWW convergence across peers.
+    #[serde(default)]
+    pub state_modified_at: DateTime<Utc>,
     pub is_favorite: bool,
     pub is_deleted: bool,
 }
@@ -154,6 +158,7 @@ mod tests {
             source_app: Some("terminal".to_string()),
             byte_size: 12,
             created_at: Utc::now(),
+            state_modified_at: Utc::now(),
             is_favorite: false,
             is_deleted: false,
         };

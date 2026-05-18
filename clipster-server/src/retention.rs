@@ -1,4 +1,4 @@
-use crate::db::Database;
+use clipster_core::db::Database;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;

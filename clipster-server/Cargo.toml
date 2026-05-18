@@ -1,10 +1,11 @@
 [package]
 name = "clipster-server"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
 clipster-common = { path = "../clipster-common" }
+clipster-core = { path = "../clipster-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }

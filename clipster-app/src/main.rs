@@ -1,226 +1,54 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod api;
+mod commands;
+mod peer_listener;
+mod settings;
 mod sync;
 
-use serde::{Deserialize, Serialize};
+use clipster_core::ClipsterCore;
+use clipster_core::db::Database;
+use clipster_core::discovery::{Announcer, Browser};
+use clipster_core::identity::Identity;
+use clipster_core::sync::SyncEngine;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use tauri::{
-    Manager,
+    Emitter, Manager,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct AppSettings {
-    #[serde(default)]
-    server_url: String,
-    #[serde(default)]
-    api_key: String,
-    #[serde(default)]
-    insecure: bool,
-    #[serde(default = "default_true")]
-    sync_enabled: bool,
+pub static CORE: OnceLock<Arc<ClipsterCore>> = OnceLock::new();
+
+pub fn core() -> Arc<ClipsterCore> {
+    CORE.get().expect("core not initialized").clone()
 }
 
-fn default_true() -> bool { true }
-
-static SETTINGS: OnceLock<Mutex<AppSettings>> = OnceLock::new();
-static SYNC_RESTART: OnceLock<Arc<AtomicBool>> = OnceLock::new();
-
-fn settings_path() -> PathBuf {
+fn data_dir() -> PathBuf {
     directories::ProjectDirs::from("com", "clipster", "clipster")
-        .map(|d| d.config_dir().to_path_buf())
+        .map(|d| d.data_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("app.toml")
 }
 
-fn load_settings() -> AppSettings {
-    let path = settings_path();
-    if path.exists() {
-        std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| toml::from_str(&s).ok())
-            .unwrap_or_default()
-    } else {
-        let client_path = path.with_file_name("client.toml");
-        if client_path.exists() {
-            std::fs::read_to_string(&client_path)
-                .ok()
-                .and_then(|s| toml::from_str(&s).ok())
-                .unwrap_or_default()
-        } else {
-            AppSettings {
-                server_url: "http://localhost:8743".into(),
-                sync_enabled: true,
-                ..Default::default()
-            }
-        }
-    }
+fn init_core() -> anyhow::Result<Arc<ClipsterCore>> {
+    let dir = data_dir();
+    std::fs::create_dir_all(&dir)?;
+    let db_path = dir.join("clipster.db");
+    let image_dir = dir.join("images");
+    std::fs::create_dir_all(&image_dir)?;
+
+    let db = Database::open(db_path.to_str().unwrap())?;
+    db.migrate()?;
+    let identity = Identity::load_or_create(&dir, None)?;
+    let core = Arc::new(ClipsterCore::new(db, identity, image_dir));
+    Ok(core)
 }
-
-fn save_settings_to_disk(settings: &AppSettings) -> Result<(), String> {
-    let path = settings_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let content = toml::to_string_pretty(settings).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-fn current_settings() -> AppSettings {
-    SETTINGS
-        .get()
-        .and_then(|m| m.lock().ok())
-        .map(|s| s.clone())
-        .unwrap_or_default()
-}
-
-fn build_http_client(settings: &AppSettings) -> reqwest::Client {
-    reqwest::Client::builder()
-        .danger_accept_invalid_certs(settings.insecure)
-        .build()
-        .expect("failed to build HTTP client")
-}
-
-// ── API proxy ────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-struct ApiRequest {
-    method: String,
-    path: String,
-    #[serde(default)]
-    body: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct ApiResponse {
-    status: u16,
-    body: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    content_type: Option<String>,
-}
-
-#[tauri::command]
-async fn api_request(req: ApiRequest) -> Result<ApiResponse, String> {
-    let settings = current_settings();
-    let client = build_http_client(&settings);
-    let base = settings.server_url.trim_end_matches('/');
-    let url = format!("{}/api/v1{}", base, req.path);
-
-    let mut builder = match req.method.to_uppercase().as_str() {
-        "GET" => client.get(&url),
-        "POST" => client.post(&url),
-        "DELETE" => client.delete(&url),
-        "PATCH" => client.patch(&url),
-        "PUT" => client.put(&url),
-        _ => return Err(format!("unsupported method: {}", req.method)),
-    };
-
-    if !settings.api_key.is_empty() {
-        builder = builder.bearer_auth(&settings.api_key);
-    }
-
-    if let Some(body) = req.body {
-        builder = builder.header("content-type", "application/json").body(body);
-    }
-
-    let resp = builder.send().await.map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    let body = resp.text().await.map_err(|e| e.to_string())?;
-
-    Ok(ApiResponse {
-        status,
-        body,
-        content_type,
-    })
-}
-
-#[tauri::command]
-async fn api_fetch_bytes(path: String) -> Result<String, String> {
-    use base64::Engine;
-
-    let settings = current_settings();
-    let client = build_http_client(&settings);
-    let base = settings.server_url.trim_end_matches('/');
-    let url = format!("{}/api/v1{}", base, path);
-
-    let mut builder = client.get(&url);
-    if !settings.api_key.is_empty() {
-        builder = builder.bearer_auth(&settings.api_key);
-    }
-
-    let resp = builder.send().await.map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
-    }
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
-}
-
-// ── Settings commands ────────────────────────────────
-
-#[tauri::command]
-fn get_settings() -> AppSettings {
-    current_settings()
-}
-
-#[tauri::command]
-fn save_settings(settings: AppSettings) -> Result<(), String> {
-    save_settings_to_disk(&settings)?;
-    if let Some(m) = SETTINGS.get() {
-        if let Ok(mut s) = m.lock() {
-            *s = settings;
-        }
-    }
-    // Signal the sync task to restart with new settings
-    if let Some(flag) = SYNC_RESTART.get() {
-        flag.store(true, Ordering::Relaxed);
-    }
-    Ok(())
-}
-
-// ── Clipboard commands ───────────────────────────────
-
-#[tauri::command]
-fn copy_to_clipboard(text: String) -> Result<(), String> {
-    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-    clipboard.set_text(&text).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-fn copy_image_to_clipboard(png_data: Vec<u8>) -> Result<(), String> {
-    let decoder = png::Decoder::new(std::io::Cursor::new(&png_data));
-    let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
-    buf.truncate(info.buffer_size());
-
-    let img = arboard::ImageData {
-        width: info.width as usize,
-        height: info.height as usize,
-        bytes: buf.into(),
-    };
-
-    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-    clipboard.set_image(img).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-// ── Main ─────────────────────────────────────────────
 
 fn main() {
-    // Hide from Cmd+Tab on macOS (agent/accessory app)
+    // Hide from Cmd+Tab on macOS
     #[cfg(target_os = "macos")]
     {
         use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
@@ -229,17 +57,12 @@ fn main() {
         app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
     }
 
-    let settings = load_settings();
-    SETTINGS.set(Mutex::new(settings)).ok();
-
-    let restart_flag = Arc::new(AtomicBool::new(false));
-    SYNC_RESTART.set(restart_flag.clone()).ok();
+    let core = init_core().expect("failed to init clipster core");
+    CORE.set(core.clone()).ok();
+    settings::load_or_init();
 
     tauri::Builder::default()
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .build(),
-        )
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(move |app| {
             let show = MenuItem::with_id(app, "show", "Show Clipster", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -287,41 +110,121 @@ fn main() {
                 },
             )?;
 
-            // Spawn the clipboard sync agent on a dedicated thread with its own runtime
-            let flag = restart_flag.clone();
+            // ── Spawn the background runtime (clipboard watcher + peer listener + sync) ─────
+            let core = core.clone();
+            let app_handle = app.handle().clone();
             std::thread::spawn(move || {
-                let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-                rt.block_on(sync::run_sync_loop(flag));
+                let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
+                rt.block_on(async move {
+                    spawn_background(core, app_handle).await;
+                    // Park forever (the tasks live on the runtime)
+                    futures_park().await;
+                });
             });
 
-            // Intercept window close and focus loss — hide instead of quit
             let window = app.get_webview_window("main").unwrap();
             let w = window.clone();
-            window.on_window_event(move |event| {
-                match event {
-                    tauri::WindowEvent::CloseRequested { api, .. } => {
-                        api.prevent_close();
-                        let _ = w.hide();
-                    }
-                    tauri::WindowEvent::Focused(false) => {
-                        let _ = w.hide();
-                    }
-                    _ => {}
+            window.on_window_event(move |event| match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = w.hide();
                 }
+                tauri::WindowEvent::Focused(false) => {
+                    let _ = w.hide();
+                }
+                _ => {}
             });
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            api_request,
-            api_fetch_bytes,
-            get_settings,
-            save_settings,
-            copy_to_clipboard,
-            copy_image_to_clipboard,
+            // Core data API (replaces old http-proxy api_request)
+            api::api_request,
+            api::api_fetch_bytes,
+            // Settings (legacy)
+            settings::get_settings,
+            settings::save_settings,
+            // Clipboard helpers
+            commands::copy_to_clipboard,
+            commands::copy_image_to_clipboard,
+            // Peer management (TOFU)
+            commands::list_peers,
+            commands::list_pending_peers,
+            commands::trust_peer,
+            commands::revoke_peer,
+            commands::get_identity,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Clipster");
+}
+
+async fn spawn_background(core: Arc<ClipsterCore>, app_handle: tauri::AppHandle) {
+    // mDNS announce + browse
+    let peer_port = settings::ensure_peer_port();
+    let announcer = match Announcer::start(
+        &core.identity.device_name,
+        peer_port,
+        &core.identity.device_id,
+        &core.identity.device_name,
+        env!("CARGO_PKG_VERSION"),
+        &["app", "images"],
+    ) {
+        Ok(a) => Some(a),
+        Err(e) => {
+            tracing::warn!(error = %e, "mDNS announce failed");
+            None
+        }
+    };
+    let browser = match Browser::start(core.identity.device_id.clone()) {
+        Ok(b) => Some(b),
+        Err(e) => {
+            tracing::warn!(error = %e, "mDNS browse failed");
+            None
+        }
+    };
+    std::mem::forget(announcer); // keep alive for process lifetime
+
+    let sync_engine = SyncEngine::spawn(core.clone());
+    if let Some(b) = &browser {
+        sync_engine.attach_discovery(b.subscribe());
+    }
+    std::mem::forget(browser);
+    drop(sync_engine);
+
+    // Peer-facing TLS listener
+    let core2 = core.clone();
+    tokio::spawn(async move {
+        if let Err(e) = peer_listener::run(core2, peer_port).await {
+            tracing::error!(error = %e, "peer listener exited");
+        }
+    });
+
+    // Forward pending-peer events to JS
+    let app2 = app_handle.clone();
+    let mut pending_rx = core.trust.pending_events();
+    tokio::spawn(async move {
+        while let Ok(event) = pending_rx.recv().await {
+            let _ = app2.emit(
+                "peer-pending",
+                serde_json::json!({
+                    "device_id": event.device_id,
+                    "name": event.name,
+                    "addr": event.addr,
+                }),
+            );
+        }
+    });
+
+    // Clipboard watcher
+    let core3 = core.clone();
+    tokio::spawn(async move {
+        sync::run_watch_loop(core3).await;
+    });
+}
+
+async fn futures_park() {
+    use std::future::pending;
+    let _: () = pending().await;
 }
 
 fn show_window_at(app: &tauri::AppHandle, tray_x: f64, tray_y: f64) {
@@ -342,21 +245,19 @@ fn show_window_at(app: &tauri::AppHandle, tray_x: f64, tray_y: f64) {
 
             #[cfg(target_os = "macos")]
             let (x, y) = {
-                // macOS: tray is at the top — position window below the icon
                 let x = (tray_x - w / 2.0).clamp(8.0, screen_w - w - 8.0);
                 (x, tray_y + 8.0)
             };
 
             #[cfg(not(target_os = "macos"))]
             let (x, y) = {
-                // Windows/Linux: tray is at the bottom — position window above the icon
                 let x = (tray_x - w / 2.0).clamp(8.0, screen_w - w - 8.0);
                 (x, (tray_y - h - 8.0).max(8.0))
             };
 
-            let _ = window.set_position(tauri::Position::Logical(
-                tauri::LogicalPosition::new(x, y),
-            ));
+            let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(
+                x, y,
+            )));
         }
 
         let _ = window.show();
@@ -369,7 +270,6 @@ fn toggle_window(app: &tauri::AppHandle) {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
         } else {
-            // Hotkey fallback — use last known position or screen edge
             if let Ok(Some(monitor)) = window.primary_monitor() {
                 let screen = monitor.size();
                 let scale = monitor.scale_factor();

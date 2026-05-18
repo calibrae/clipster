@@ -28,6 +28,23 @@ export interface AppSettings {
   api_key: string;
   insecure: boolean;
   sync_enabled?: boolean;
+  local_peer_port?: number;
+}
+
+export interface PeerRecord {
+  device_id: string;
+  name: string;
+  trust_status: 'pending' | 'trusted' | 'rejected';
+  pinned_at: string | null;
+  last_seen: string | null;
+  last_addr: string | null;
+  last_sync_at: string | null;
+  capabilities: string | null;
+}
+
+export interface IdentityInfo {
+  device_id: string;
+  device_name: string;
 }
 
 export type TauriInvoke = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
