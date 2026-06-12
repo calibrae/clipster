@@ -47,7 +47,57 @@ fn init_core() -> anyhow::Result<Arc<ClipsterCore>> {
     Ok(core)
 }
 
+fn install_panic_hook() {
+    let log_path = log_path();
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::panic::set_hook(Box::new(move |info| {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "<non-string panic>".to_string());
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "<unknown>".into());
+        let entry = format!(
+            "[{}] PANIC at {location}\n  message: {payload}\n  backtrace:\n{backtrace}\n\n",
+            chrono::Utc::now().to_rfc3339()
+        );
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            use std::io::Write;
+            let _ = f.write_all(entry.as_bytes());
+        }
+        eprintln!("{entry}");
+    }));
+}
+
+fn log_path() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        directories::BaseDirs::new()
+            .map(|d| d.home_dir().join("Library/Logs/Clipster/panic.log"))
+            .unwrap_or_else(|| PathBuf::from("clipster-panic.log"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        directories::ProjectDirs::from("com", "clipster", "clipster")
+            .map(|d| d.data_local_dir().join("panic.log"))
+            .unwrap_or_else(|| PathBuf::from("clipster-panic.log"))
+    }
+}
+
 fn main() {
+    install_panic_hook();
+
     // Hide from Cmd+Tab on macOS
     #[cfg(target_os = "macos")]
     {
@@ -227,6 +277,35 @@ async fn futures_park() {
     let _: () = pending().await;
 }
 
+/// Compute clamped logical (x, y) for the window panel. Always safe for
+/// degenerate / virtual / screen-shared displays — falls back to (8, 8).
+fn safe_position(
+    monitor_size_w: f64,
+    monitor_size_h: f64,
+    scale: f64,
+    win_w: f64,
+    win_h: f64,
+    tray_x: f64,
+    tray_y: f64,
+    macos_layout: bool,
+) -> (f64, f64) {
+    let scale = if scale.is_finite() && scale > 0.1 { scale } else { 1.0 };
+    let screen_w = (monitor_size_w / scale).max(win_w + 16.0);
+    let screen_h = (monitor_size_h / scale).max(win_h + 16.0);
+
+    let max_x = (screen_w - win_w - 8.0).max(8.0);
+    let raw_x = if tray_x.is_finite() { tray_x - win_w / 2.0 } else { 8.0 };
+    let x = raw_x.clamp(8.0, max_x);
+
+    let y = if macos_layout {
+        if tray_y.is_finite() { tray_y + 8.0 } else { 8.0 }
+    } else {
+        let raw_y = if tray_y.is_finite() { tray_y - win_h - 8.0 } else { 8.0 };
+        raw_y.max(8.0).min((screen_h - win_h - 8.0).max(8.0))
+    };
+    (x, y)
+}
+
 fn show_window_at(app: &tauri::AppHandle, tray_x: f64, tray_y: f64) {
     if let Some(window) = app.get_webview_window("main") {
         if window.is_visible().unwrap_or(false) {
@@ -235,25 +314,20 @@ fn show_window_at(app: &tauri::AppHandle, tray_x: f64, tray_y: f64) {
         }
 
         let w = 400.0_f64;
-        #[allow(unused)]
         let h = 600.0_f64;
 
         if let Ok(Some(monitor)) = window.primary_monitor() {
-            let screen = monitor.size();
-            let scale = monitor.scale_factor();
-            let screen_w = screen.width as f64 / scale;
-
-            #[cfg(target_os = "macos")]
-            let (x, y) = {
-                let x = (tray_x - w / 2.0).clamp(8.0, screen_w - w - 8.0);
-                (x, tray_y + 8.0)
-            };
-
-            #[cfg(not(target_os = "macos"))]
-            let (x, y) = {
-                let x = (tray_x - w / 2.0).clamp(8.0, screen_w - w - 8.0);
-                (x, (tray_y - h - 8.0).max(8.0))
-            };
+            let size = monitor.size();
+            let (x, y) = safe_position(
+                size.width as f64,
+                size.height as f64,
+                monitor.scale_factor(),
+                w,
+                h,
+                tray_x,
+                tray_y,
+                cfg!(target_os = "macos"),
+            );
 
             let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(
                 x, y,
@@ -271,18 +345,22 @@ fn toggle_window(app: &tauri::AppHandle) {
             let _ = window.hide();
         } else {
             if let Ok(Some(monitor)) = window.primary_monitor() {
-                let screen = monitor.size();
+                let size = monitor.size();
                 let scale = monitor.scale_factor();
-                let screen_w = screen.width as f64 / scale;
+                let scale = if scale.is_finite() && scale > 0.1 { scale } else { 1.0 };
+                let screen_w = (size.width as f64 / scale).max(416.0);
+                let screen_h = (size.height as f64 / scale).max(616.0);
 
                 #[cfg(target_os = "macos")]
-                let (x, y) = (screen_w - 400.0 - 12.0, 30.0);
+                let (x, y) = ((screen_w - 400.0 - 12.0).max(8.0), 30.0);
 
                 #[cfg(not(target_os = "macos"))]
-                let (x, y) = {
-                    let screen_h = screen.height as f64 / scale;
-                    (screen_w - 400.0 - 12.0, screen_h - 600.0 - 48.0)
-                };
+                let (x, y) = (
+                    (screen_w - 400.0 - 12.0).max(8.0),
+                    (screen_h - 600.0 - 48.0).max(8.0),
+                );
+                #[cfg(target_os = "macos")]
+                let _ = screen_h;
 
                 let _ = window.set_position(tauri::Position::Logical(
                     tauri::LogicalPosition::new(x, y),
@@ -291,5 +369,33 @@ fn toggle_window(app: &tauri::AppHandle) {
             let _ = window.show();
             let _ = window.set_focus();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_position;
+
+    #[test]
+    fn degenerate_screen_does_not_panic() {
+        // The screen-sharing virtual display case: width effectively reports as 1
+        let (x, y) = safe_position(1.0, 1.0, 1.0, 400.0, 600.0, 100.0, 30.0, true);
+        assert_eq!(x, 8.0);
+        assert_eq!(y, 38.0);
+    }
+
+    #[test]
+    fn nan_inputs_do_not_panic() {
+        let (x, y) = safe_position(f64::NAN, f64::NAN, f64::NAN, 400.0, 600.0, f64::NAN, f64::NAN, true);
+        assert!(x.is_finite());
+        assert!(y.is_finite());
+    }
+
+    #[test]
+    fn normal_screen_centers_under_tray() {
+        // 1440 logical wide, tray at x=1300
+        let (x, _) = safe_position(2880.0, 1800.0, 2.0, 400.0, 600.0, 1300.0, 24.0, true);
+        // Should be roughly 1300 - 200 = 1100, clamped to [8, 1032]
+        assert_eq!(x, 1032.0);
     }
 }

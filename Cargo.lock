@@ -541,7 +541,7 @@ dependencies = [
 
 [[package]]
 name = "clipster-agent"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -568,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "clipster-app"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "clipster-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -624,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "clipster-common"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "chrono",
  "hostname",
@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "clipster-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -673,7 +673,7 @@ dependencies = [
 
 [[package]]
 name = "clipster-server"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "axum",
